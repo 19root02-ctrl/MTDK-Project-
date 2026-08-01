@@ -53,25 +53,11 @@ emailTransporter = nodemailer.createTransport({
     return emailTransporter;
   }
 
-  try {
-    const testAccount = await nodemailer.createTestAccount();
-    emailTransporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass
-      }
-    });
-    emailTransporterIsTest = true;
-    console.log('Using Ethereal test account for email (development)');
-    return emailTransporter;
-  } catch (e) {
+  catch (e) {
     console.warn('Could not create test email account:', e && e.message ? e.message : e);
     throw e;
   }
-}
+
 
 async function sendApprovalEmail(student) {
   const studentEmail = student.email || student.studentEmail || student.emailAddress;
