@@ -1,0 +1,16 @@
+{
+  "name": "imtse_web_portal",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/api.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mysql2": "^3.23.0",
+    "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1"
+  }
+}

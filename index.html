@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ignited Minds - Talent Search Examination (IMTSE)</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <script>
+        // Minimal navigation stubs to avoid ReferenceError if app.js hasn't loaded yet
+        (function(){
+            if (!window.switchTab) {
+                window._navQueue = window._navQueue || [];
+                window.switchTab = function(tabId){
+                    if (window._realSwitchTab) return window._realSwitchTab(tabId);
+                    window._navQueue.push(tabId);
+                    console.warn('switchTab queued (preload)', tabId);
+                };
+            }
+            if (!window.scrollToSection) {
+                window.scrollToSection = function(sectionId){
+                    window._scrollQueue = window._scrollQueue || [];
+                    window._scrollQueue.push(sectionId);
+                    console.warn('scrollToSection queued (preload)', sectionId);
+                };
+            }
+        })();
+    </script>
+    <!-- Top Alert Bar -->
+    <div class="top-announcement">
+        <div class="announcement-content">
+            <span class="badge">UPDATED</span>
+            <span class="text">IMTSE 2026-27 Registrations Open! Exam Date: <strong>14 February 2027</strong></span>
+        </div>
+    </div>
+
+    <!-- Navigation Header -->
+    <header class="main-header">
+        <div class="nav-container">
+            <a href="#" class="logo" onclick="switchTab('home')">
+                <svg class="logo-svg" viewBox="0 0 100 100" width="40" height="40">
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="url(#logoGradient)" stroke-width="4"/>
+                    <!-- Head Outline -->
+                    <path d="M45,70 C45,70 30,65 30,50 C30,35 40,25 50,25 C60,25 70,35 70,50 C70,60 65,68 58,71" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    <!-- Lightbulb outline inside -->
+                    <path d="M45,55 C42,50 42,44 45,40 C48,37 52,37 55,40 C58,44 58,50 55,55" fill="none" stroke="currentColor" stroke-width="2"/>
+                    <path d="M46,58 L54,58 M47,61 L53,61" stroke="currentColor" stroke-width="2"/>
+                    <!-- Flame emerging -->
+                    <path d="M50,15 C54,23 58,26 55,34 C52,40 48,40 45,34 C43,30 46,23 50,15 Z" fill="var(--color-accent)" />
+                    <defs>
+                        <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#0f2b5c" />
+                            <stop offset="100%" stop-color="#f97316" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="brand-text">
+                    <span class="brand-title">IGNITED MINDS</span>
+                    <span class="brand-sub">Talent Search Exam (IMTSE)</span>
+                </div>
+            </a>
+
+            <nav class="nav-menu" id="navMenu">
+                <a href="#home" class="nav-link active" onclick="switchTab('home')">Home</a>
+                <a href="#about" class="nav-link" onclick="switchTab('about')">About</a>
+                <a href="#exam" class="nav-link" onclick="switchTab('exam')">Exam</a>
+                <a href="#admin" class="nav-link" onclick="switchTab('admin')">Admin</a>
+                <a href="#login" class="nav-link login-btn" onclick="switchTab('login')">Login</a>
+            </nav>
+
+            <button class="register-cta" onclick="switchTab('exam'); scrollToSection('registration-section')">
+                Register Now
+                <i data-lucide="arrow-right" class="icon-sm"></i>
+            </button>
+
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-toggle" onclick="toggleMobileMenu()">
+                <i data-lucide="menu" id="menuIcon"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Containers -->
+    <main class="main-content">
+        
+        <!-- ==================== HOME VIEW ==================== -->
+        <section id="home-view" class="tab-view active">
+            <!-- Hero Banner -->
+            <div class="hero-section">
+                <div class="hero-grid">
+                    <div class="hero-text-content">
+                        <span class="hero-badge">Registration Open 2026-27</span>
+                        <h1 class="hero-title">Ignite Your Potential, <br><span class="text-gradient">Achieve Excellence</span></h1>
+                        <p class="hero-description">
+                            A prestigious state-level Talent Search Examination designed for students from <strong>Class I to X</strong>. Join thousands of young minds competing for recognition, cash prizes, and unique educational trips.
+                        </p>
+                        <div class="hero-meta">
+                            <div class="meta-item">
+                                <i data-lucide="calendar" class="icon-orange"></i>
+                                <div>
+                                    <span class="label">Exam Date</span>
+                                    <span class="value">14 Feb 2027</span>
+                                </div>
+                            </div>
+                            <div class="meta-item">
+                                <i data-lucide="award" class="icon-orange"></i>
+                                <div>
+                                    <span class="label">Prizes Up To</span>
+                                    <span class="value">₹5,000 + Medals</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hero-actions">
+                            <button class="btn-primary" onclick="switchTab('exam'); scrollToSection('registration-section')">
+                                Apply Online Now
+                                <i data-lucide="arrow-right"></i>
+                            </button>
+                            <button class="btn-secondary" onclick="switchTab('exam'); scrollToSection('rules-section')">
+                                Read Exam Rules
+                                <i data-lucide="file-text"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="hero-graphic">
+                        <div class="badge-card floating-1">
+                            <i data-lucide="trophy" class="badge-icon gold"></i>
+                            <div>
+                                <h4>Cash Prizes</h4>
+                                <p>For Top Performers</p>
+                            </div>
+                        </div>
+                        <div class="badge-card floating-2">
+                            <i data-lucide="compass" class="badge-icon blue"></i>
+                            <div>
+                                <h4>Educational Visit</h4>
+                                <p>Vidhan Bhavan & Science Centre</p>
+                            </div>
+                        </div>
+                        <div class="hero-illustration">
+                            <div class="circle-bg"></div>
+                            <div class="student-container-animate">
+                                <img src="student_boy.png" alt="IMTSE Student Champion" class="hero-student-img">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats/Prizes Section -->
+            <div class="home-prizes-section">
+                <div class="section-header">
+                    <span class="subtitle">Standard-Wise Awards</span>
+                    <h2>IMTSE Cash Prizes & Recognition</h2>
+                    <p>Recognizing talent and encouraging academic excellence across the state.</p>
+                </div>
+                
+                <div class="prizes-grid">
+                    <div class="prize-card rank-1">
+                        <div class="medal-icon rank-1">1</div>
+                        <h3>1st Prize</h3>
+                        <div class="amount">₹5,000</div>
+                        <p class="description">Cash reward & Excellence Certificate for standard toppers.</p>
+                    </div>
+                    <div class="prize-card rank-2">
+                        <div class="medal-icon rank-2">2</div>
+                        <h3>2nd Prize</h3>
+                        <div class="amount">₹3,000</div>
+                        <p class="description">Cash reward & Distinction Certificate for runner-ups.</p>
+                    </div>
+                    <div class="prize-card rank-3">
+                        <div class="medal-icon rank-3">3</div>
+                        <h3>3rd Prize</h3>
+                        <div class="amount">₹2,000</div>
+                        <p class="description">Cash reward & Achievement Certificate for third-place finishers.</p>
+                    </div>
+                    <div class="prize-card rank-consolation">
+                        <div class="medal-icon rank-c">4</div>
+                        <h3>4th & 5th Prize</h3>
+                        <div class="amount">₹500 <small>Each</small></div>
+                        <p class="description">Consolation prizes for outstanding performers.</p>
+                    </div>
+                </div>
+
+                <div class="other-awards-container">
+                    <div class="other-awards-grid">
+                        <div class="award-item">
+                            <i data-lucide="award"></i>
+                            <div>
+                                <h4>Medals & Certificates</h4>
+                                <p>Medals for district toppers & certificates for all participants.</p>
+                            </div>
+                        </div>
+                        <div class="award-item">
+                            <i data-lucide="laptop"></i>
+                            <div>
+                                <h4>Free Online Sessions</h4>
+                                <p>Interactive digital preparation webinars and resources.</p>
+                            </div>
+                        </div>
+                        <div class="award-item">
+                            <i data-lucide="scroll"></i>
+                            <div>
+                                <h4>Free Mock Tests</h4>
+                                <p>Access past test templates and simulated mock exams.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Registration Fees -->
+            <div class="fees-section">
+                <div class="section-header">
+                    <span class="subtitle">Affordable Entry</span>
+                    <h2>Registration Fee Structure</h2>
+                    <p>Standardized pricing structures for students of standards I to X.</p>
+                </div>
+                <div class="fees-grid">
+                    <div class="fee-card">
+                        <span class="class-range">Std. I - II</span>
+                        <div class="price">₹450</div>
+                        <span class="label">Regular Fee</span>
+                    </div>
+                    <div class="fee-card">
+                        <span class="class-range">Std. III - IV</span>
+                        <div class="price">₹450</div>
+                        <span class="label">Regular Fee</span>
+                    </div>
+                    <div class="fee-card highlighted">
+                        <span class="class-range">Std. V - VI</span>
+                        <div class="price">₹500</div>
+                        <span class="label">Regular Fee</span>
+                    </div>
+                    <div class="fee-card">
+                        <span class="class-range">Std. VII - VIII</span>
+                        <div class="price">₹550</div>
+                        <span class="label">Regular Fee</span>
+                    </div>
+                    <div class="fee-card">
+                        <span class="class-range">Std. IX - X</span>
+                        <div class="price">₹600</div>
+                        <span class="label">Regular Fee</span>
+                    </div>
+                </div>
+                <div class="late-fee-note">
+                    <i data-lucide="alert-triangle"></i>
+                    <span><strong>Late Registration:</strong> An additional late fee of <strong>₹50</strong> will be charged after 31 October 2026.</span>
+                </div>
+            </div>
+
+            <!-- Important Dates Timeline -->
+            <div class="timeline-section">
+                <div class="section-header">
+                    <span class="subtitle">Stay Updated</span>
+                    <h2>Key Timeline & Dates</h2>
+                    <p>Please note the crucial phases of the IMTSE 2026-27 process.</p>
+                </div>
+
+                <div class="timeline-container">
+                    <div class="timeline-track"></div>
+                    
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <span class="date">15 July 2026</span>
+                            <h3>Registration Starts</h3>
+                            <p>Application form submissions open online and offline portals.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <span class="date">31 October 2026</span>
+                            <h3>Registration Deadline</h3>
+                            <p>Last date to register under regular application charges.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item warning">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <span class="date">15 November 2026</span>
+                            <h3>Late Registration Closes</h3>
+                            <p>Final registration window with an additional fine of ₹50.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item highlight">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <span class="date">14 February 2027</span>
+                            <h3>Examination Date</h3>
+                            <p>State-wide talent exam administered at designated venues.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <span class="date">15 March 2027</span>
+                            <h3>Result Declaration</h3>
+                            <p>Scores and state/district ranks announced online.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <span class="date">27 June 2027</span>
+                            <h3>Prize Distribution</h3>
+                            <p>Grand award ceremony for toppers, winners, and coordinators.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Special Opportunity Section -->
+            <div class="special-opportunity">
+                <div class="opportunity-card">
+                    <div class="opportunity-content">
+                        <div class="badge-highlight">Special Opportunity</div>
+                        <h2>Visit Prominent Science & Legislative Landmarks</h2>
+                        <p>
+                            IMTSE toppers and rank winners receive an exclusive, fully-sponsored educational trip to inspire future scientists and leaders.
+                        </p>
+                        <div class="opportunity-destinations">
+                            <div class="destination">
+                                <i data-lucide="landmark"></i>
+                                <div>
+                                    <h4>Nagpur Vidhan Bhavan</h4>
+                                    <p>Observe the legislative governance and administrative chambers of state leadership.</p>
+                                </div>
+                            </div>
+                            <div class="destination">
+                                <i data-lucide="atom"></i>
+                                <div>
+                                    <h4>Raman Science Centre</h4>
+                                    <p>Engage with experiential science galleries, planetarium shows, and practical exhibits.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="opportunity-decor">
+                        <div class="decor-circle"></div>
+                        <i data-lucide="plane-takeoff" class="plane-decor"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==================== ABOUT VIEW ==================== -->
+        <section id="about-view" class="tab-view">
+            <div class="about-hero">
+                <h1>About the Initiative</h1>
+                <p>Learn more about the trust behind the talent search and how to reach out to us.</p>
+            </div>
+
+            <div class="about-grid">
+                <!-- About Description -->
+                <div class="about-card main-info">
+                    <h2>MTDK Shaikshanik Sankul</h2>
+                    <p>
+                        MTDK Shaikshanik Sankul is a pioneering educational collective dedicated to promoting academic quality, critical thinking, and logical capabilities among school students. 
+                    </p>
+                    <p>
+                        The Ignited Minds Talent Search Examination (IMTSE) is our flagship program. It goes beyond classroom curriculums, preparing students from early classes (I to X) to develop quantitative, analytical, and logical mindsets essential for competitive environments.
+                    </p>
+                    
+                    <div class="venue-info">
+                        <h3><i data-lucide="map-pin"></i> Examination Venue</h3>
+                        <p class="venue-address">
+                            <strong>Matoshree Tanubai Dagadu Khade English School & Jr. College</strong><br>
+                            Miraj - 416410, Maharashtra, India.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Contact & Queries Card -->
+                <div class="about-card contact-card">
+                    <h2>Contact Committee</h2>
+                    <p>For registrations, school coordination, or queries, please feel free to reach out to our representatives:</p>
+                    
+                    <div class="contact-list">
+                        <div class="contact-item">
+                            <div class="contact-avatar"><i data-lucide="user"></i></div>
+                            <div class="contact-details">
+                                <span class="role">Coordinator</span>
+                                <span class="name">Mrs. Subhadra Jadhav</span>
+                                <a href="tel:9527229712" class="phone"><i data-lucide="phone"></i> 9527229712</a>
+                            </div>
+                        </div>
+
+                        <div class="contact-item">
+                            <div class="contact-avatar"><i data-lucide="user"></i></div>
+                            <div class="contact-details">
+                                <span class="role">Coordinator</span>
+                                <span class="name">Mr. Ganesh Pawar</span>
+                                <a href="tel:9356986053" class="phone"><i data-lucide="phone"></i> 9356986053</a>
+                            </div>
+                        </div>
+
+                        <div class="contact-item">
+                            <div class="contact-avatar"><i data-lucide="user"></i></div>
+                            <div class="contact-details">
+                                <span class="role">Coordinator</span>
+                                <span class="name">Mr. Yogesh Rokade</span>
+                                <a href="tel:9175802480" class="phone"><i data-lucide="phone"></i> 9175802480</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FAQs -->
+            <div class="faq-section">
+                <h2>Frequently Asked Questions</h2>
+                <div class="faq-grid">
+                    <div class="faq-item">
+                        <h4>Who is eligible to participate in IMTSE?</h4>
+                        <p>All school students from Class I to Class X enrolled in recognized schools across any board (State, CBSE, ICSE) can participate.</p>
+                    </div>
+                    <div class="faq-item">
+                        <h4>What is the syllabus of the examination?</h4>
+                        <p>The syllabus covers age-appropriate Science, Mathematics, and Mental Ability/Logical Reasoning matching their current standards.</p>
+                    </div>
+                    <div class="faq-item">
+                        <h4>Can I change the medium of exam after registering?</h4>
+                        <p>No, the medium (English, Semi-English, Marathi) selected during registration will be printed on the admit card and cannot be changed.</p>
+                    </div>
+                    <div class="faq-item">
+                        <h4>Is the registration fee refundable?</h4>
+                        <p>As per regulation 1, the registration/examination fee is non-refundable and non-transferable under any circumstances.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==================== EXAM VIEW ==================== -->
+        <section id="exam-view" class="tab-view">
+            
+            <!-- Rules Section -->
+            <div id="rules-section" class="exam-rules-container">
+                <div class="rules-header">
+                    <i data-lucide="shield-alert" class="rules-icon"></i>
+                    <div>
+                        <h1>Exam Rules & Regulations</h1>
+                        <p>Please read the rules carefully. You must accept them at the bottom to open the Online Application Form.</p>
+                    </div>
+                </div>
+
+                <div class="rules-grid-box">
+                    <ol class="official-rules-list">
+                        <li>The examination fee is non-refundable and non-transferable.</li>
+                        <li>Students must carry their Admit Card and School ID/Aadhaar Card on the examination day.</li>
+                        <li>Candidates should report to the examination centre 30 minutes before the reporting time.</li>
+                        <li>Entry to the examination hall after the scheduled time may not be permitted.</li>
+                        <li>Students must bring blue/black ball pen, pencil, eraser, sharpener, and other required stationery.</li>
+                        <li>Mobile phones, smart watches, calculators, books, notes, or any electronic devices are strictly prohibited.</li>
+                        <li>Candidates must follow the instructions given by the invigilators throughout the examination.</li>
+                        <li>Any form of malpractice, cheating, or misconduct will lead to immediate disqualification.</li>
+                        <li>The examination centre allotted by the organisers shall be final. Changes, if any, will be communicated in advance.</li>
+                        <li>In unavoidable circumstances, the organisers reserve the right to change the examination date, time, or venue.</li>
+                        <li>The decision of the examination committee shall be final and binding in all matters.</li>
+                        <li>Results will be declared on the official website/official communication channel on the notified date.</li>
+                        <li>Merit certificates, medals, scholarships, and prizes will be awarded according to the official merit list.</li>
+                        <li>Parents/Guardians should ensure that the information provided in the application form is correct.</li>
+                        <li>The organisers are not responsible for the loss of any personal belongings at the examination centre.</li>
+                        <li>Candidates must maintain discipline and follow all examination rules.</li>
+                        <li>Any dispute regarding the examination shall be subject to the jurisdiction of the organiser's district court.</li>
+                        <li>Submission of the application form implies acceptance of all the above rules and regulations.</li>
+                    </ol>
+                </div>
+
+                <div class="rules-acceptance-card">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="rulesCheckbox" onchange="toggleFormLock()">
+                        <span class="checkmark"></span>
+                        <span class="checkbox-label">I have read and understood all the examination rules and regulations and agree to abide by them.</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Locked Form Container -->
+            <div id="registration-section" class="registration-form-wrapper locked">
+                <!-- Locked Overlay -->
+                <div class="locked-overlay" id="formLockedOverlay">
+                    <div class="overlay-content">
+                        <i data-lucide="lock" class="lock-icon"></i>
+                        <h3>Application Form Locked</h3>
+                        <p>You must check the "I have read and understood all the rules..." agreement above to unlock and fill the registration form.</p>
+                        <button class="btn-primary" onclick="scrollToSection('rules-section')">Read Rules</button>
+                    </div>
+                </div>
+
+                <!-- Form Content -->
+                <div class="form-container">
+                    <div class="form-header">
+                        <span class="form-badge">IMTSE 2026-27</span>
+                        <h2>APPLICATION FORM</h2>
+                        <p>Fill all fields carefully. Marks with (*) are mandatory.</p>
+                    </div>
+
+                    <!-- Steps Progress Bar -->
+                    <div class="form-steps-nav">
+                        <div class="step-indicator active" id="step1-indicator">
+                            <span class="step-num">1</span>
+                            <span class="step-name">Student Info</span>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step-indicator" id="step2-indicator">
+                            <span class="step-num">2</span>
+                            <span class="step-name">Address & Contact</span>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step-indicator" id="step3-indicator">
+                            <span class="step-num">3</span>
+                            <span class="step-name">Fee Payment</span>
+                        </div>
+                    </div>
+
+                    <!-- Multi-step Form element -->
+                    <form id="imtseRegisterForm" onsubmit="handleFormSubmit(event)">
+                        
+                        <!-- STEP 1: Student Information -->
+                        <div class="form-step-content active" id="form-step-1">
+                            <h3 class="section-title">Student Information</h3>
+                            
+                            <div class="input-group">
+                                <label for="fullName">Student's Full Name (BLOCK LETTERS) <span class="required">*</span></label>
+                                <input type="text" id="fullName" placeholder="ENTER FIRSTNAME MIDDLENAME SURNAME" required oninput="this.value = this.value.toUpperCase()">
+                            </div>
+
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="studentClass">Select Class <span class="required">*</span></label>
+                                    <select id="studentClass" required onchange="updateDynamicFee()">
+                                        <option value="" disabled selected>Select class...</option>
+                                        <option value="I">Class I (Fee: ₹450)</option>
+                                        <option value="II">Class II (Fee: ₹450)</option>
+                                        <option value="III">Class III (Fee: ₹450)</option>
+                                        <option value="IV">Class IV (Fee: ₹450)</option>
+                                        <option value="V">Class V (Fee: ₹500)</option>
+                                        <option value="VI">Class VI (Fee: ₹500)</option>
+                                        <option value="VII">Class VII (Fee: ₹550)</option>
+                                        <option value="VIII">Class VIII (Fee: ₹550)</option>
+                                        <option value="IX">Class IX (Fee: ₹600)</option>
+                                        <option value="X">Class X (Fee: ₹600)</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="input-group">
+                                    <label>Medium of Exam <span class="required">*</span></label>
+                                    <div class="radio-flex">
+                                        <label class="radio-container">
+                                            <input type="radio" name="medium" value="English" required>
+                                            <span class="radio-check"></span>
+                                            English
+                                        </label>
+                                        <label class="radio-container">
+                                            <input type="radio" name="medium" value="Semi-English">
+                                            <span class="radio-check"></span>
+                                            Semi-English
+                                        </label>
+                                        <label class="radio-container">
+                                            <input type="radio" name="medium" value="Marathi">
+                                            <span class="radio-check"></span>
+                                            Marathi
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="schoolName">School Name <span class="required">*</span></label>
+                                    <input type="text" id="schoolName" placeholder="Enter school name" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="dateOfBirth">Date of Birth <span class="required">*</span></label>
+                                    <input type="date" id="dateOfBirth" required>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="parentName">Parent / Guardian Name <span class="required">*</span></label>
+                                    <input type="text" id="parentName" placeholder="Enter parent or guardian name" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="whatsappNumber">Mobile Number (WhatsApp) <span class="required">*</span></label>
+                                    <input type="tel" id="whatsappNumber" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" required>
+                                    <small>Provide WhatsApp enabled number for admit card and alerts.</small>
+                                    <div id="whatsappError" class="input-error" aria-live="polite"></div>
+                                </div>
+                                <div class="input-group">
+                                    <label for="studentEmail">Email Address <span class="required">*</span></label>
+                                    <input type="email" id="studentEmail" placeholder="e.g. student@gmail.com" required>
+                                    <small>Confirmation email with receipt will be sent to this address after admin approval.</small>
+                                    <div id="emailError" class="input-error" aria-live="polite"></div>
+                                </div>
+                            </div>
+
+                            <div class="step-footer">
+                                <span></span>
+                                <button id="continueToAddressBtn" type="button" class="btn-primary" onclick="nextStep(2)">
+                                    Continue to Address
+                                    <i data-lucide="chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- STEP 2: Address Details -->
+                        <div class="form-step-content" id="form-step-2">
+                            <h3 class="section-title">Complete School Address</h3>
+                            <div class="form-row">
+                                <div class="input-group school-field">
+                                    <label for="schoolAddressVal">School & Village/City <span class="required">*</span></label>
+                                    <input type="text" id="schoolAddressVal" placeholder="School name & town" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="schoolTaluka">Taluka <span class="required">*</span></label>
+                                    <input type="text" id="schoolTaluka" placeholder="Taluka" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="schoolDistrict">District <span class="required">*</span></label>
+                                    <input type="text" id="schoolDistrict" placeholder="District" required>
+                                </div>
+                                <div class="input-group pin-field">
+                                    <label for="schoolPin">PIN Code <span class="required">*</span></label>
+                                    <input type="text" id="schoolPin" placeholder="6-digit PIN" pattern="[0-9]{6}" maxlength="6" required>
+                                </div>
+                            </div>
+
+                            <div class="address-copy-checkbox">
+                                <label class="checkbox-container">
+                                    <input type="checkbox" id="copyAddressBtn" onchange="copyAddressFields()">
+                                    <span class="checkmark"></span>
+                                    <span class="checkbox-label">Residential Address is the same as School Address</span>
+                                </label>
+                            </div>
+
+                            <h3 class="section-title residential-title">Complete Residential Address</h3>
+                            <div class="form-row">
+                                <div class="input-group school-field">
+                                    <label for="resAddressVal">Village / City <span class="required">*</span></label>
+                                    <input type="text" id="resAddressVal" placeholder="House/Flat No, Apartment, Street & Area" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="resTaluka">Taluka <span class="required">*</span></label>
+                                    <input type="text" id="resTaluka" placeholder="Taluka" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="resDistrict">District <span class="required">*</span></label>
+                                    <input type="text" id="resDistrict" placeholder="District" required>
+                                </div>
+                                <div class="input-group pin-field">
+                                    <label for="resPin">PIN Code <span class="required">*</span></label>
+                                    <input type="text" id="resPin" placeholder="6-digit PIN" pattern="[0-9]{6}" maxlength="6" required>
+                                </div>
+                            </div>
+
+                            <div class="step-footer">
+                                <button type="button" class="btn-secondary" onclick="prevStep(1)">
+                                    <i data-lucide="chevron-left"></i>
+                                    Back
+                                </button>
+                                <button type="button" class="btn-primary" onclick="nextStep(3)">
+                                    Proceed to Payment
+                                    <i data-lucide="chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- STEP 3: Fees & Payment -->
+                        <div class="form-step-content" id="form-step-3">
+                            <h3 class="section-title">Registration Fee details</h3>
+                            
+                            <div class="payment-overview-card">
+                                <div class="invoice-row">
+                                    <span>Registration Fee (Base):</span>
+                                    <span id="baseFeeDisplay">₹0</span>
+                                </div>
+                                <div class="invoice-row late-fee-row" id="lateFeeRow">
+                                    <span>Late Registration Fee (After Oct 31):</span>
+                                    <span>₹50</span>
+                                </div>
+                                <hr>
+                                <div class="invoice-total">
+                                    <span>Total Payable Amount:</span>
+                                    <span id="totalFeeDisplay">₹0</span>
+                                </div>
+                            </div>
+
+                            <h3 class="section-title">Select Payment Mode</h3>
+                            <div class="payment-modes-grid">
+                                <label class="pay-mode-card">
+                                    <input type="radio" name="paymentMode" value="UPI" required onchange="handlePaymentModeChange(this.value)">
+                                    <div class="mode-icon"><i data-lucide="smartphone"></i></div>
+                                    <div class="mode-info">
+                                        <h4>UPI Payment</h4>
+                                        <p>Scan QR code (Google Pay, PhonePe, Paytm)</p>
+                                    </div>
+                                </label>
+
+                                <label class="pay-mode-card">
+                                    <input type="radio" name="paymentMode" value="Cash" onchange="handlePaymentModeChange(this.value)">
+                                    <div class="mode-icon"><i data-lucide="banknote"></i></div>
+                                    <div class="mode-info">
+                                        <h4>Cash / Offline</h4>
+                                        <p>Submit cash directly to your school coordinator</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- UPI QR Simulation Block -->
+                            <div id="upiPaymentSimulator" class="payment-simulator-box hidden">
+                                <div class="simulator-inner">
+                                    <div class="qr-code-box" style="text-align: center; padding: 10px; background: white; border-radius: 12px;">
+                                        <img src="payment_qr.png" alt="IMTSE Payment QR Code Scanner" class="sim-qr-img" style="max-width: 200px; width: 100%; height: auto; border-radius: 8px; border: 2px solid #0f2b5c; box-shadow: 0 4px 12px rgba(15,43,92,0.15); display: block; margin: 0 auto;">
+                                    </div>
+                                    <div class="qr-instructions">
+                                        <p class="qr-heading">Scan with GPay, PhonePe, Paytm, or any UPI App</p>
+                                        <p class="qr-sub">Scan the code above to pay <strong id="qrAmountDisplay">₹0</strong>. The system will automatically detect the transaction once approved.</p>
+                                        
+                                        <!-- Simulated timer -->
+                                        <div class="qr-timer">
+                                            <i data-lucide="clock" class="icon-sm"></i>
+                                            <span>Time remaining: <strong id="timerText">05:00</strong></span>
+                                        </div>
+
+                                        <button type="button" class="btn-verify-payment" onclick="verifyUPISimulation()">
+                                            <i data-lucide="check-circle2"></i>
+                                            Simulate Successful Payment Approval
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Cash Notice -->
+                            <div id="cashPaymentNotice" class="payment-simulator-box cash-box hidden">
+                                <div class="cash-notice-inner">
+                                    <i data-lucide="info" class="cash-info-icon"></i>
+                                    <div>
+                                        <h4>Offline Cash Payment Instructions</h4>
+                                        <p>You can complete the submission now. Your registration status will remain <strong>"Pending"</strong> until you pay the total of <strong id="cashAmountDisplay">₹0</strong> to your school's IMTSE Coordinator.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="parent-declaration-check">
+                                <label class="checkbox-container">
+                                    <input type="checkbox" id="declarationCheckbox" required>
+                                    <span class="checkmark"></span>
+                                    <span class="checkbox-label">
+                                        I hereby declare that all the information furnished in this application is true and correct. I willingly permit my child to appear for the Ignited Minds Talent Search Examination (IMTSE) 2026–27.
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="step-footer">
+                                <button type="button" class="btn-secondary" onclick="prevStep(2)" id="prevBtnStep3">
+                                    <i data-lucide="chevron-left"></i>
+                                    Back
+                                </button>
+                                <button type="submit" class="btn-primary success-btn" id="submitBtn">
+                                    <i data-lucide="check"></i>
+                                    Submit Registration
+                                </button>
+                            </div>
+                        </div>
+
+                    </form>
+                    <div id="loginDebug" style="display:none;margin-top:12px;padding:10px;border-radius:6px;background:#fff6f6;color:#6b0b0b;border:1px solid #f5c2c2;font-size:13px;">Debug: <span id="loginDebugText"></span></div>
+                </div>
+            </div>
+
+            <!-- ==================== RECEIPT PRINT SECTION ==================== -->
+            <div id="acknowledgementReceipt" class="receipt-section hidden">
+                <div class="receipt-card receipt-card-alt">
+                    <div class="receipt-top-bar">
+                        <div class="receipt-brand-group">
+                            <p class="receipt-brand-pill">IGNITED MINDS</p>
+                            <h2 class="receipt-heading">TALENT SEARCH EXAM</h2>
+                            <p class="receipt-subtitle">2026-27</p>
+                        </div>
+                    </div>
+
+                    <div class="receipt-title-strip">
+                        <span>REGISTRATION DETAILS</span>
+                    </div>
+
+                    <div class="receipt-info-list">
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="hash"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Registration No.</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recRegNo">IMTSE-63369</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="user"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Student Name</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recStudentName">SANGEETA PATIL</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="award"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Class & Medium</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recClassMedium">IX - English</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="book-open"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">School Name</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recSchoolName">MTDK</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="credit-card"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Amount Paid</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recAmount">₹600</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="wallet"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Payment Mode</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recPayMode">Cash (Offline Pending)</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="calendar"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Date of Registration</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recDate">31 July 2026</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="calendar"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Exam Date</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recExamDate">14 February 2027</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="clock"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Exam Time</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recExamTime">10:00 AM to 12:00 PM</span>
+                        </div>
+                        <div class="receipt-info-row">
+                            <div class="receipt-info-left">
+                                <span class="receipt-icon-wrap"><i data-lucide="map-pin"></i></span>
+                                <div class="receipt-info-text">
+                                    <span class="info-label">Exam Centre</span>
+                                </div>
+                            </div>
+                            <span class="info-value" id="recExamCentre">MTDK School</span>
+                        </div>
+                    </div>
+
+                    <div class="receipt-badge-large">
+                        <span>ALL THE BEST!</span>
+                    </div>
+                </div>
+
+                <div class="receipt-contact-bar receipt-contact-bar-alt">
+                    <span>+91 12345 67890</span>
+                    <span>support@ignitedminds.in</span>
+                    <span>www.ignitedminds.in</span>
+                </div>
+
+                <div class="receipt-actions">
+                    <button class="btn-primary" onclick="window.print()">
+                        <i data-lucide="printer"></i>
+                        Print / Download Receipt
+                    </button>
+                    <button class="btn-primary" onclick="loginDirectlyFromReceipt()" style="background: linear-gradient(135deg, var(--color-success) 0%, #059669 100%); border: none;">
+                        <i data-lucide="layout-dashboard"></i>
+                        Go to Dashboard
+                    </button>
+                    <button class="btn-secondary" onclick="resetFormAndRegisterAnother()">
+                        <i data-lucide="refresh-cw"></i>
+                        Register Another
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== ADMIN VIEW ==================== -->
+        <section id="admin-view" class="tab-view">
+            <div class="admin-shell">
+                <div class="admin-hero">
+                    <div>
+                        <span class="hero-badge">Admin Control Center</span>
+                        <h1>Manage student profiles and study resources</h1>
+                        <p>Update registrations, remove inactive profiles, and publish class-wise learning materials with YouTube, PDF, and DOC links.</p>
+                    </div>
+                    <div id="adminAccessCard" class="admin-access-card">
+                        <h3>Admin Access</h3>
+                        <form id="adminLoginForm" onsubmit="handleAdminLogin(event)">
+                            <label for="adminUsername">Username</label>
+                            <input type="text" id="adminUsername" placeholder="Enter admin username" value="admin" required>
+                            <label for="adminPassword">Password</label>
+                            <input type="password" id="adminPassword" placeholder="Enter admin password" value="admin" required>
+                            <button type="submit" class="btn-primary btn-block">Unlock Panel</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="adminPanelContent" class="admin-panel hidden">
+                    <div class="admin-toolbar">
+                        <h2>Admin Panel</h2>
+                        <div class="admin-panel-switcher">
+                            <button type="button" class="panel-toggle active" onclick="showAdminPanel('students')">Student Profiles</button>
+                            <button type="button" class="panel-toggle" onclick="showAdminPanel('resources')">Study Resources</button>
+                        </div>
+                        <button class="btn-secondary" onclick="logoutAdmin()">Lock Panel</button>
+                    </div>
+
+                    <div class="admin-grid">
+                        <section id="adminStudentPanel" class="admin-card admin-panel-section">
+                            <div class="admin-card-header">
+                                <div>
+                                    <h3>Student Profiles</h3>
+                                    <p>Create, edit, or remove learner profiles.</p>
+                                </div>
+                                <button type="button" class="btn-primary" onclick="resetAdminStudentForm()">New Student</button>
+                            </div>
+
+                            <form id="adminStudentForm" onsubmit="saveStudentFromAdmin(event)">
+                                <input type="hidden" id="adminStudentId">
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="adminStudentName">Student Name</label>
+                                        <input type="text" id="adminStudentName" placeholder="Full name" required>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="adminStudentClass">Class</label>
+                                        <select id="adminStudentClass" required>
+                                            <option value="I">Class I</option>
+                                            <option value="II">Class II</option>
+                                            <option value="III">Class III</option>
+                                            <option value="IV">Class IV</option>
+                                            <option value="V">Class V</option>
+                                            <option value="VI">Class VI</option>
+                                            <option value="VII">Class VII</option>
+                                            <option value="VIII">Class VIII</option>
+                                            <option value="IX">Class IX</option>
+                                            <option value="X">Class X</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="adminStudentMedium">Medium</label>
+                                        <select id="adminStudentMedium">
+                                            <option value="English">English</option>
+                                            <option value="Semi-English">Semi-English</option>
+                                            <option value="Marathi">Marathi</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="adminStudentSchool">School</label>
+                                        <input type="text" id="adminStudentSchool" placeholder="School name" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="adminStudentDob">DOB</label>
+                                        <input type="date" id="adminStudentDob" required>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="adminStudentPhone">WhatsApp / Phone</label>
+                                        <input type="text" id="adminStudentPhone" placeholder="10-digit mobile" required>
+                                    </div>
+                                </div>
+                                <div class="input-group">
+                                    <label for="adminStudentAddress">Address</label>
+                                    <input type="text" id="adminStudentAddress" placeholder="Residential address" required>
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="adminStudentAmount">Amount</label>
+                                        <input type="text" id="adminStudentAmount" placeholder="₹550.00" required>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="adminStudentPayMode">Payment Mode</label>
+                                        <input type="text" id="adminStudentPayMode" placeholder="UPI / Cash / Online" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="adminStudentRegNo">Registration No.</label>
+                                        <input type="text" id="adminStudentRegNo" placeholder="Leave blank to auto-generate">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="adminStudentStatus">Status</label>
+                                        <input type="text" id="adminStudentStatus" placeholder="Approved / Pending" required>
+                                    </div>
+                                </div>
+                                <div class="input-group">
+                                    <label for="adminStudentParent">Parent / Guardian</label>
+                                    <input type="text" id="adminStudentParent" placeholder="Parent or guardian name" required>
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="adminStudentRegDate">Registration Date</label>
+                                        <input type="text" id="adminStudentRegDate" placeholder="15-July-2026">
+                                    </div>
+                                    <div class="input-group">
+                                        <button type="submit" class="btn-primary">Save Student</button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Class</th>
+                                            <th>Phone</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminStudentsTable"></tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section id="adminResourcePanel" class="admin-card admin-panel-section hidden">
+                            <div class="admin-card-header">
+                                <div>
+                                    <h3>Study Resources</h3>
+                                    <p>Publish links for YouTube videos, PDFs, DOCs, and other materials by class category.</p>
+                                </div>
+                                <button type="button" class="btn-primary" onclick="resetAdminResourceForm()">New Resource</button>
+                            </div>
+
+                            <form id="adminResourceForm" onsubmit="saveResourceFromAdmin(event)">
+                                <input type="hidden" id="adminResourceId">
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="resourceTitle">Title</label>
+                                        <input type="text" id="resourceTitle" placeholder="Resource title" required>
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="resourceCategory">Class Category</label>
+                                        <select id="resourceCategory" required></select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <label for="resourceType">Resource Type</label>
+                                        <select id="resourceType" onchange="toggleResourceInputMode()" required>
+                                            <option value="YouTube">YouTube</option>
+                                            <option value="PDF">PDF</option>
+                                            <option value="DOC">DOC</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div id="resourceUrlWrapper" class="input-group">
+                                    <label for="resourceUrl">Link / URL</label>
+                                    <input type="url" id="resourceUrl" placeholder="https://example.com">
+                                </div>
+                                <div id="resourceFileWrapper" class="input-group hidden">
+                                    <label for="resourceFile">Upload File</label>
+                                    <input type="file" id="resourceFile" accept=".pdf,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                                </div>
+                                <div class="input-group">
+                                    <label for="resourceDescription">Description</label>
+                                    <input type="text" id="resourceDescription" placeholder="Short description">
+                                </div>
+                                <div class="form-row">
+                                    <div class="input-group">
+                                        <button type="submit" class="btn-primary">Save Resource</button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Title</th>
+                                            <th>Category</th>
+                                            <th>Type</th>
+                                            <th>Link</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminResourcesTable"></tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==================== LOGIN VIEW ==================== -->
+        <section id="login-view" class="tab-view">
+            
+            <!-- Login Box Container -->
+            <div id="login-form-box" class="login-wrapper">
+                <div class="login-card">
+                    <div class="login-header">
+                        <h2>Portal Login</h2>
+                        <p>Access your IMTSE Dashboard to view results, admit cards, and resources.</p>
+                    </div>
+
+                    <form id="imtseLoginForm" onsubmit="handleLoginSubmit(event)">
+                        <div class="input-group">
+                            <label for="loginRegNo">Registration Number / Phone</label>
+                            <div class="input-icon-wrapper">
+                                <i data-lucide="user"></i>
+                                <input type="text" id="loginRegNo" placeholder="IMTSE-XXXXX or Mobile number" required>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="loginPass">Password (DOB in YYYY-MM-DD or DDMMYYYY format)</label>
+                            <div class="input-icon-wrapper">
+                                <i data-lucide="key-round"></i>
+                                <input type="password" id="loginPass" placeholder="e.g. 2016-08-14 or 14082016" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary btn-block">
+                            Login to Dashboard
+                            <i data-lucide="log-in"></i>
+                        </button>
+                    </form>
+                    
+                    <div class="login-help-note">
+                        <p><strong>New User?</strong> The system auto-generates your registration credentials after you submit the application form. You can use your mobile number and DOB to sign in.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulated Dashboard Container -->
+            <div id="student-dashboard" class="dashboard-wrapper hidden">
+                <div class="dashboard-grid">
+                    
+                    <!-- Left Sidebar Profile -->
+                    <div class="dashboard-sidebar">
+                        <div class="sidebar-header">
+                            <div class="profile-avatar">
+                                <i data-lucide="user"></i>
+                            </div>
+                            <h3 id="dashName">RAHUL R. SHINDE</h3>
+                            <span class="badge-role" id="dashClass">Class VII (English Medium)</span>
+                            <span class="reg-number" id="dashRegId">Reg No: IMTSE-10984</span>
+                        </div>
+                        <div class="sidebar-menu">
+                            <a href="#" class="sidebar-item active"><i data-lucide="layout-dashboard"></i> Dashboard Overview</a>
+                            <a href="#" class="sidebar-item" onclick="downloadHallTicket()"><i data-lucide="file-badge"></i> Download Admit Card</a>
+                            <a href="#" class="sidebar-item" onclick="alert('Results will be declared on 15 March 2027.')"><i data-lucide="bar-chart-3"></i> View Exam Results</a>
+                            <hr>
+                            <a href="#" class="sidebar-item logout" onclick="handleDashboardLogout()"><i data-lucide="log-out"></i> Sign Out</a>
+                        </div>
+                    </div>
+
+                    <!-- Right Main Content -->
+                    <div class="dashboard-main">
+                        <!-- Top status bar -->
+                        <div class="dash-welcome-card">
+                            <div class="welcome-text">
+                                <h2>Welcome back, <span id="dashFirstName">Rahul</span>!</h2>
+                                <p>You have successfully registered for the IMTSE Talent Search Exam 2026-27.</p>
+                            </div>
+                            <div class="countdown-card">
+                                <span class="days" id="countdownDays">--</span>
+                                <span class="label">Days to Exam</span>
+                            </div>
+                        </div>
+
+                        <!-- Info Grid -->
+                        <div class="dash-info-grid">
+                            <!-- Registration Status -->
+                            <div class="dash-card">
+                                <div class="card-header-icon orange"><i data-lucide="verified"></i></div>
+                                <h3>Registration Status</h3>
+                                <div class="status-indicator">
+                                    <span class="status-dot green"></span>
+                                    <span class="status-txt" id="dashRegStatus">Approved & Active (Fees Paid)</span>
+                                </div>
+                                <p class="card-desc">Your offline credentials have been fully verified. You are clear to sit for the exam on 14 Feb 2027.</p>
+                            </div>
+
+                            <!-- Preparation Resources -->
+                            <div class="dash-card">
+                                <div class="card-header-icon blue"><i data-lucide="book-open"></i></div>
+                                <h3>Study Resources</h3>
+                                <div id="studentResourcesList" class="download-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <h3>IGNITED MINDS</h3>
+                <p>MTDK Shaikshanik Sankul Initiative.</p>
+            </div>
+            <div class="footer-links">
+                <h4>Portal Navigation</h4>
+                <ul>
+                    <li><a href="#home" onclick="switchTab('home')">Home</a></li>
+                    <li><a href="#about" onclick="switchTab('about')">About</a></li>
+                    <li><a href="#exam" onclick="switchTab('exam')">Rules & Application</a></li>
+                    <li><a href="#login" onclick="switchTab('login')">Login Dashboard</a></li>
+                </ul>
+            </div>
+            <div class="footer-contact">
+                <h4>Exam Venue</h4>
+                <p>Matoshree Tanubai Dagadu Khade English School & Jr. College, Miraj - 416410</p>
+                <div class="footer-socials">
+                    <a href="tel:9527229712"><i data-lucide="phone"></i></a>
+                    <a href="#"><i data-lucide="mail"></i></a>
+                    <a href="#"><i data-lucide="globe"></i></a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 IGNITED MINDS. All Rights Reserved. Designed for IMTSE Talent Search.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script id="appScript" src="app.js"></script>
+    <script>
+        (function(){
+            const dbg = document.getElementById('loginDebug');
+            const dbgText = document.getElementById('loginDebugText');
+            function show(msg){
+                console.log(msg);
+                if (dbg && dbgText){ dbg.style.display = 'block'; dbgText.textContent = msg; }
+            }
+
+            const appScript = document.getElementById('appScript');
+            if (appScript) {
+                appScript.addEventListener('load', ()=>{
+                    show('app.js loaded');
+                    try {
+                        if (window._navQueue && window._navQueue.length) {
+                            window._navQueue.forEach(t => { try { if (typeof window.switchTab === 'function') window.switchTab(t); } catch(e){} });
+                            window._navQueue = [];
+                        }
+                        if (window._scrollQueue && window._scrollQueue.length) {
+                            window._scrollQueue.forEach(s => { try { if (typeof window.scrollToSection === 'function') window.scrollToSection(s); } catch(e){} });
+                            window._scrollQueue = [];
+                        }
+                    } catch (e) { console.error('drain failed', e); show('drain failed: ' + (e && e.message)); }
+                });
+                appScript.addEventListener('error', ()=> show('Failed to load app.js (network error)'));
+            } else {
+                show('appScript element not found');
+            }
+
+            window.addEventListener('error', (ev)=>{
+                const msg = `Runtime Error: ${ev.message} at ${ev.filename}:${ev.lineno}:${ev.colno}`;
+                console.error(msg);
+                show(msg);
+            });
+            window.addEventListener('unhandledrejection', (ev)=>{
+                const msg = `Unhandled Rejection: ${ev.reason}`;
+                console.error(msg);
+                show(msg);
+            });
+
+            console.log('diagnostic installed');
+        })();
+    </script>
+</body>
+</html>
