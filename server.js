@@ -4,6 +4,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
+const axios = require("axios");
 
 dotenv.config({ path: path.join(__dirname, '.env') });  
 
@@ -126,35 +127,42 @@ emailTransporter = nodemailer.createTransport({
     </div>
   </div>`;
 
-  try {
-    const transporter = await ensureEmailTransporter();
-    const info = await transporter.sendMail({
-      from: `"IMTSE Portal" <${process.env.SMTP_USER}>`, 
-      to: studentEmail,
-      subject: `IMTSE 2026-27 - Registration Confirmed | Reg No. ${regNo}`,
-      html: emailBody,
-      attachments: [
-        {
-          filename: `IMTSE_Registration_${regNo}.pdf`,
-          content: pdfBuffer
-        }
-      ]
-    });
-
-    console.log('[EMAIL] Mail send result', {
-      accepted: info && info.accepted,
-      rejected: info && info.rejected,
-      response: info && info.response,
-      messageId: info && info.messageId
-    });
-
-    if (emailTransporterIsTest) {
-      const previewUrl = nodemailer.getTestMessageUrl(info) || null;
-      return { ok: true, previewUrl };
+ const response = await axios.post(
+  "https://api.brevo.com/v3/smtp/email",
+  {
+    sender: {
+      name: "IMTSE Portal",
+      email: process.env.SMTP_USER
+    },
+    to: [
+      {
+        email: studentEmail,
+        name: studentName
+      }
+    ],
+    subject: `IMTSE 2026-27 - Registration Confirmed | Reg No. ${regNo}`,
+    htmlContent: emailBody,
+    attachment: [
+      {
+        name: `IMTSE_Registration_${regNo}.pdf`,
+        content: pdfBuffer.toString("base64")
+      }
+    ]
+  },
+  {
+    headers: {
+      "api-key": process.env.BREVO_API_KEY,
+      "Content-Type": "application/json"
     }
+  }
+);
 
-    return { ok: true, messageId: info && info.messageId };
-  } catch (e) {
+console.log("[EMAIL] Sent successfully", response.data);
+
+return {
+  ok: true,
+  messageId: response.data.messageId || null
+}; catch (e) {
     const errorMessage = e && e.message ? e.message : String(e);
     const errorStack = e && e.stack ? e.stack : '';
     console.error('[EMAIL] Mail send failed');
