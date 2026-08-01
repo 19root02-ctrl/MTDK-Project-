@@ -162,7 +162,9 @@ console.log("[EMAIL] Sent successfully", response.data);
 return {
   ok: true,
   messageId: response.data.messageId || null
-}; catch (e) {
+}; 
+}
+catch (e) {
     const errorMessage = e && e.message ? e.message : String(e);
     const errorStack = e && e.stack ? e.stack : '';
     console.error('[EMAIL] Mail send failed');
