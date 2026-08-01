@@ -53,13 +53,7 @@ emailTransporter = nodemailer.createTransport({
     return emailTransporter;
   }
 
-  catch (e) {
-    console.warn('Could not create test email account:', e && e.message ? e.message : e);
-    throw e;
-  }
-
-
-async function sendApprovalEmail(student) {
+  async function sendApprovalEmail(student) {
   const studentEmail = student.email || student.studentEmail || student.emailAddress;
   console.log('[EMAIL] Approval email requested', {
     regNo: student.reg_no || student.regNo || student.regno || '',
