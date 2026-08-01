@@ -35,12 +35,10 @@ async function ensureEmailTransporter() {
 
   if (process.env.SMTP_HOST && process.env.SMTP_USER) {
     emailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: (process.env.SMTP_SECURE === 'true'),
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS || ''
+     service: "gmail",
+     auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
       }
     });
     emailTransporterIsTest = false;
@@ -85,9 +83,6 @@ async function sendApprovalEmail(student) {
 
   try {
     const transporter = await ensureEmailTransporter();
-    console.log('[SMTP] Verifying transporter connection');
-    await transporter.verify();
-    console.log('[SMTP] Transporter verification succeeded');
   } catch (e) {
     const errorMessage = e && e.message ? e.message : String(e);
     const errorStack = e && e.stack ? e.stack : '';
@@ -141,8 +136,9 @@ async function sendApprovalEmail(student) {
   </div>`;
 
   try {
-    const info = await emailTransporter.sendMail({
-      from: `"IMTSE Portal" <${process.env.SMTP_USER}>`,
+    const transporter = await ensureEmailTransporter();
+    const info = await transporter.sendMail({
+      from: `"IMTSE Portal" <${process.env.SMTP_USER}>`, 
       to: studentEmail,
       subject: `IMTSE 2026-27 - Registration Confirmed | Reg No. ${regNo}`,
       html: emailBody,
