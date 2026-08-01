@@ -284,18 +284,19 @@ async function tryInitDatabase(providedPool = null) {
   }
 
   try {
-    const databaseName = process.env.DB_NAME || 'imtse_portal';
-    connectionPool = mysql.createPool({
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: Number(process.env.DB_PORT || 3306),
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: databaseName,
-      connectionLimit: 10,
-      dateStrings: true,
-      waitForConnections: true,
-      queueLimit: 0
-    });
+    const databaseName =
+  process.env.DB_NAME ||
+  process.env.MYSQLDATABASE ||
+  'imtse_portal';
+
+   connectionPool = mysql.createPool({
+  host: process.env.DB_HOST || process.env.MYSQLHOST,
+  port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
+  user: process.env.DB_USER || process.env.MYSQLUSER,
+  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
+  database: databaseName,
+  connectionLimit: 10,
+});
 
     await connectionPool.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
     await connectionPool.query(`USE \`${databaseName}\``);
