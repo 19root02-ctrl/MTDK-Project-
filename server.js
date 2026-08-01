@@ -288,7 +288,11 @@ async function tryInitDatabase(providedPool = null) {
   process.env.DB_NAME ||
   process.env.MYSQLDATABASE ||
   'imtse_portal';
-
+      console.log("DB_HOST =", process.env.DB_HOST);
+      console.log("MYSQLHOST =", process.env.MYSQLHOST);
+      console.log("DB_PORT =", process.env.DB_PORT);
+      console.log("MYSQLPORT =", process.env.MYSQLPORT);
+      console.log("DB_NAME =", process.env.DB_NAME || process.env.MYSQLDATABASE);
    connectionPool = mysql.createPool({
   host: process.env.DB_HOST || process.env.MYSQLHOST,
   port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
