@@ -296,6 +296,8 @@ async function tryInitDatabase(providedPool = null) {
   password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
   database: databaseName,
   connectionLimit: 10,
+  waitForConnections: true,
+  queueLimit: 0,
 });
 
     await connectionPool.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
