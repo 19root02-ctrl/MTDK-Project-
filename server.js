@@ -33,14 +33,22 @@ async function ensureEmailTransporter() {
   };
   console.log('[SMTP] Config prepared', JSON.stringify(smtpConfig));
 
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    emailTransporter = nodemailer.createTransport({
-     service: "gmail",
-     auth: {
+  console.log("SMTP_HOST =", process.env.SMTP_HOST);
+console.log("SMTP_PORT =", process.env.SMTP_PORT);
+console.log("SMTP_USER =", process.env.SMTP_USER);
+console.log("SMTP_SECURE =", process.env.SMTP_SECURE);
+
+emailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === "true",
+  auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
-      }
-    });
+  }
+});
+
+  
     emailTransporterIsTest = false;
     return emailTransporter;
   }
