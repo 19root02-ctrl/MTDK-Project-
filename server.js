@@ -5,7 +5,7 @@ const dotenv = require('dotenv');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 
-dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '.env') });  
 
 // In-memory fallbacks
 if (!global.__students) global.__students = [];

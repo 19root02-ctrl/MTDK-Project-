@@ -66,7 +66,7 @@ const defaultStudent = {
 let dbStudents = [];
 let dbResources = [];
 let adminSession = false;
-const API_BASE_URL = "http://127.0.0.1:3000";
+const API_BASE_URL = window.location.origin;
 try {
     const savedStudents = localStorage.getItem("imtse_students");
     if (savedStudents) {
@@ -737,16 +737,19 @@ async function handleFormSubmit(event) {
     document.getElementById("recExamTime").innerText = "10:00 AM to 12:00 PM";
     document.getElementById("recExamCentre").innerText = "MTDK School";
     
+    const statusStamp = document.getElementById("recStatus");
     if (selectedPaymentMode === "Cash") {
         document.getElementById("recPayMode").innerText = "Cash (Offline Pending)";
-        const statusStamp = document.getElementById("recStatus");
-        statusStamp.innerText = "PENDING";
-        statusStamp.className = "status-stamp pending";
+        if (statusStamp) {
+            statusStamp.innerText = "PENDING";
+            statusStamp.className = "status-stamp pending";
+        }
     } else {
         document.getElementById("recPayMode").innerText = "UPI (Verified)";
-        const statusStamp = document.getElementById("recStatus");
-        statusStamp.innerText = "PAID";
-        statusStamp.className = "status-stamp approved";
+        if (statusStamp) {
+            statusStamp.innerText = "PAID";
+            statusStamp.className = "status-stamp approved";
+        }
     }
 
     // Hide registration form wrapper, show receipt
