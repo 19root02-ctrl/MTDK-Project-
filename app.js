@@ -635,7 +635,18 @@ function verifyUPISimulation() {
     alert("Simulated UPI payment verified successfully!");
     
     const qrText = document.getElementById("timerText");
-    qrText.innerHTML = "<span style='color: var(--color-success)'>VERIFIED & APPROVED</span>";
+    if (qrText) {
+        qrText.innerHTML = "<span style='color: var(--color-success)'>VERIFIED & APPROVED</span>";
+    }
+}
+
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
 }
 
 // Helper: Read file as base64 string
@@ -707,8 +718,15 @@ async function handleFormSubmit(event) {
     };
 
     try {
+        const screenshotInput = document.getElementById("paymentScreenshotInput");
+        if (screenshotInput?.files?.[0]) {
+            newStudent.paymentScreenshotName = screenshotInput.files[0].name;
+            newStudent.paymentScreenshotData = await readFileAsDataURL(screenshotInput.files[0]);
+        }
         await saveStudentToDatabase(newStudent);
         mockDatabase.save(newStudent);
+        renderAdminStudents();
+        await loadStudentsFromDatabase();
     } catch (error) {
         console.error("Failed to save registration to database", error);
         let errorMsg = error && error.message ? error.message : "Database save failed.";
@@ -751,6 +769,9 @@ async function handleFormSubmit(event) {
             statusStamp.className = "status-stamp approved";
         }
     }
+
+    // Refresh admin student list so newly registered entries are visible
+    await loadStudentsFromDatabase();
 
     // Hide registration form wrapper, show receipt
     document.getElementById("imtseRegisterForm").reset();
