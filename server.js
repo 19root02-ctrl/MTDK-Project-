@@ -2,62 +2,28 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const dotenv = require('dotenv');
-const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
-const axios = require("axios");
+const axios = require('axios');
 
-dotenv.config({ path: path.join(__dirname, '.env') });  
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // In-memory fallbacks
 if (!global.__students) global.__students = [];
 if (!global.__resources) global.__resources = [];
 
-// ── Email Transporter (initialized on demand) ───────────────────────
-let emailTransporter = null;
-let emailTransporterIsTest = false;
+let connectionPool = null;
+let isDbConnected = false;
+let injectedEmailTransporter = null;
 
-async function ensureEmailTransporter() {
-  if (emailTransporter) return emailTransporter;
-  if (injectedEmailTransporter) {
-    emailTransporter = injectedEmailTransporter;
-    emailTransporterIsTest = false;
-    return emailTransporter;
-  }
+function setInjectedEmailTransporter(transporter) {
+  injectedEmailTransporter = transporter;
+}
 
+function getSenderEmail() {
+  return process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || process.env.SMTP_FROM || '';
+}
 
-  const smtpConfig = {
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === 'true',
-    user: process.env.SMTP_USER || '',
-    hasPassword: Boolean(process.env.SMTP_PASS),
-    from: process.env.SMTP_USER || ''
-  };
-  console.log('[SMTP] Config prepared', JSON.stringify(smtpConfig));
-
-  console.log("SMTP_HOST =", process.env.SMTP_HOST);
-console.log("SMTP_PORT =", process.env.SMTP_PORT);
-console.log("SMTP_USER =", process.env.SMTP_USER);
-console.log("SMTP_SECURE =", process.env.SMTP_SECURE);
-console.log("SMTP_PASS exists =", !!process.env.SMTP_PASS);
-console.log("SMTP_PASS length =", process.env.SMTP_PASS?.length || 0);
-
-emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
-
-  
-    emailTransporterIsTest = false;
-    return emailTransporter;
-  }
-
-  async function sendApprovalEmail(student) {
+async function sendApprovalEmail(student) {
   const studentEmail = student.email || student.studentEmail || student.emailAddress;
   console.log('[EMAIL] Approval email requested', {
     regNo: student.reg_no || student.regNo || student.regno || '',
@@ -72,19 +38,6 @@ emailTransporter = nodemailer.createTransport({
 
   const studentName = student.full_name || student.fullName || student.name || 'Student';
   const regNo = student.reg_no || student.regNo || student.regno || '';
-
-  try {
-    const transporter = await ensureEmailTransporter();
-  } catch (e) {
-    const errorMessage = e && e.message ? e.message : String(e);
-    const errorStack = e && e.stack ? e.stack : '';
-    console.error('[SMTP] Transporter verification failed');
-    console.error('[SMTP] Error message:', errorMessage);
-    if (errorStack) console.error('[SMTP] Error stack:', errorStack);
-    if (e && e.code) console.error('[SMTP] Error code:', e.code);
-    if (e && e.response) console.error('[SMTP] SMTP response:', e.response);
-    return { ok: false, reason: 'transporter-failed', error: errorMessage };
-  }
 
   let pdfBuffer;
   try {
@@ -127,44 +80,44 @@ emailTransporter = nodemailer.createTransport({
     </div>
   </div>`;
 
- const response = await axios.post(
-  "https://api.brevo.com/v3/smtp/email",
-  {
-    sender: {
-      name: "IMTSE Portal",
-      email: process.env.SMTP_USER
-    },
-    to: [
+  try {
+    const response = await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
       {
-        email: studentEmail,
-        name: studentName
-      }
-    ],
-    subject: `IMTSE 2026-27 - Registration Confirmed | Reg No. ${regNo}`,
-    htmlContent: emailBody,
-    attachment: [
+        sender: {
+          name: 'IMTSE Portal',
+          email: getSenderEmail() || 'noreply@imtse.org'
+        },
+        to: [
+          {
+            email: studentEmail,
+            name: studentName
+          }
+        ],
+        subject: `IMTSE 2026-27 - Registration Confirmed | Reg No. ${regNo}`,
+        htmlContent: emailBody,
+        attachment: [
+          {
+            name: `IMTSE_Registration_${regNo}.pdf`,
+            content: pdfBuffer.toString('base64')
+          }
+        ]
+      },
       {
-        name: `IMTSE_Registration_${regNo}.pdf`,
-        content: pdfBuffer.toString("base64")
+        headers: {
+          'api-key': process.env.BREVO_API_KEY || '',
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
       }
-    ]
-  },
-  {
-    headers: {
-      "api-key": process.env.BREVO_API_KEY,
-      "Content-Type": "application/json"
-    }
-  }
-);
+    );
 
-console.log("[EMAIL] Sent successfully", response.data);
-
-return {
-  ok: true,
-  messageId: response.data.messageId || null
-}; 
-}
-catch (e) {
+    console.log('[EMAIL] Sent successfully', response.data);
+    return {
+      ok: true,
+      messageId: response.data.messageId || null
+    };
+  } catch (e) {
     const errorMessage = e && e.message ? e.message : String(e);
     const errorStack = e && e.stack ? e.stack : '';
     console.error('[EMAIL] Mail send failed');
@@ -202,8 +155,18 @@ function normalizeDate(value) {
   if (dmMatch) return `${dmMatch[3]}-${dmMatch[2]}-${dmMatch[1]}`;
 
   const monthNames = {
-    january:1,february:2,march:3,april:4,may:5,june:6,
-    july:7,august:8,september:9,october:10,november:11,december:12
+    january: 1,
+    february: 2,
+    march: 3,
+    april: 4,
+    may: 5,
+    june: 6,
+    july: 7,
+    august: 8,
+    september: 9,
+    october: 10,
+    november: 11,
+    december: 12
   };
   const cleaned = asString.replace(/[,]/g, '').replace(/\s+/g, ' ').trim();
   const humanMatch = cleaned.match(/^([0-9]{1,2})[- ]([A-Za-z]+)[- ]([0-9]{4})$/);
@@ -213,7 +176,7 @@ function normalizeDate(value) {
     const year = Number(humanMatch[3]);
     const month = monthNames[monthRaw];
     if (month && day >= 1 && day <= 31) {
-      return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
   }
   return null;
@@ -264,15 +227,6 @@ async function generateRegistrationPdfBuffer(student) {
   });
 }
 
-let connectionPool = null;
-let isDbConnected = false;
-let injectedEmailTransporter = null;
-
-function setInjectedEmailTransporter(transporter) {
-  injectedEmailTransporter = transporter;
-  emailTransporter = transporter;
-}
-
 async function tryInitDatabase(providedPool = null) {
   if (providedPool) {
     connectionPool = providedPool;
@@ -281,25 +235,23 @@ async function tryInitDatabase(providedPool = null) {
   }
 
   try {
-    const databaseName =
-  process.env.DB_NAME ||
-  process.env.MYSQLDATABASE ||
-  'imtse_portal';
-      console.log("DB_HOST =", process.env.DB_HOST);
-      console.log("MYSQLHOST =", process.env.MYSQLHOST);
-      console.log("DB_PORT =", process.env.DB_PORT);
-      console.log("MYSQLPORT =", process.env.MYSQLPORT);
-      console.log("DB_NAME =", process.env.DB_NAME || process.env.MYSQLDATABASE);
-   connectionPool = mysql.createPool({
-  host: process.env.DB_HOST || process.env.MYSQLHOST,
-  port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
-  user: process.env.DB_USER || process.env.MYSQLUSER,
-  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
-  database: databaseName,
-  connectionLimit: 10,
-  waitForConnections: true,
-  queueLimit: 0,
-});
+    const databaseName = process.env.DB_NAME || process.env.MYSQLDATABASE || 'imtse_portal';
+    console.log('DB_HOST =', process.env.DB_HOST);
+    console.log('MYSQLHOST =', process.env.MYSQLHOST);
+    console.log('DB_PORT =', process.env.DB_PORT);
+    console.log('MYSQLPORT =', process.env.MYSQLPORT);
+    console.log('DB_NAME =', process.env.DB_NAME || process.env.MYSQLDATABASE);
+
+    connectionPool = mysql.createPool({
+      host: process.env.DB_HOST || process.env.MYSQLHOST,
+      port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
+      user: process.env.DB_USER || process.env.MYSQLUSER,
+      password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
+      database: databaseName,
+      connectionLimit: 10,
+      waitForConnections: true,
+      queueLimit: 0,
+    });
 
     await connectionPool.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
     await connectionPool.query(`USE \`${databaseName}\``);
@@ -325,10 +277,10 @@ async function tryInitDatabase(providedPool = null) {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
     try {
-      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN payment_screenshot_name VARCHAR(255) NULL AFTER pay_mode`.replace('\\`', '`'));
+      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN payment_screenshot_name VARCHAR(255) NULL AFTER pay_mode`);
     } catch (e) {}
     try {
-      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN payment_screenshot_data LONGTEXT NULL AFTER payment_screenshot_name`.replace('\\`', '`'));
+      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN payment_screenshot_data LONGTEXT NULL AFTER payment_screenshot_name`);
     } catch (e) {}
     try {
       await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN email VARCHAR(255) NULL AFTER whatsapp`);
@@ -462,7 +414,6 @@ function createServer(options = {}) {
         }
       }
 
-      // Store in memory cache
       const idx = global.__students.findIndex(s => s.whatsapp === whatsapp || (s.regNo && s.regNo === student.regNo));
       if (idx !== -1) global.__students[idx] = student;
       else global.__students.push(student);
@@ -474,7 +425,6 @@ function createServer(options = {}) {
     }
   });
 
-  // ── APPROVE STUDENT (sends confirmation email with attached PDF) ────────
   app.post('/api/students/:studentId/approve', async (req, res) => {
     const identifier = String(req.params.studentId || '').trim();
     console.log('[APPROVAL] API entered', { identifier, body: req.body || {} });
@@ -536,7 +486,6 @@ function createServer(options = {}) {
     }
   });
 
-  // ── REJECT STUDENT ─────────────────────────────────────────────────
   app.post('/api/students/:studentId/reject', async (req, res) => {
     try {
       const identifier = String(req.params.studentId || '').trim();
@@ -600,7 +549,6 @@ function createServer(options = {}) {
     }
   });
 
-  // Resource API Endpoints
   app.get('/api/resources', async (_req, res) => {
     if (isDbConnected && connectionPool) {
       try {
