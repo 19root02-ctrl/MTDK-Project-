@@ -185,17 +185,22 @@ function normalizeDate(value) {
 async function generateRegistrationPdfBuffer(student) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ size: 'A5', margin: 30 });
+      const doc = new PDFDocument({ size: 'A5', margin: 24 });
       const chunks = [];
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-      doc.rect(0, 0, doc.page.width, 70).fill('#0f2b5c');
-      doc.fillColor('white').fontSize(14).font('Helvetica-Bold').text('IGNITED MINDS TALENT SEARCH EXAM 2026-27', 30, 20, { align: 'center' });
+      const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const cardWidth = pageWidth;
+      const leftX = doc.page.margins.left;
 
-      doc.moveDown(2);
-      doc.fillColor('#1a1a2e').fontSize(12).font('Helvetica-Bold').text('Registration Details:', { underline: false });
-      doc.moveDown(0.5);
+      doc.rect(leftX, 20, cardWidth, 90).fill('#0f2b5c');
+      doc.fillColor('white').fontSize(16).font('Helvetica-Bold').text('IGNITED MINDS TALENT SEARCH EXAM', leftX + 16, 32, { width: cardWidth - 32, align: 'center' });
+      doc.fontSize(10).font('Helvetica').text('2026-27 | MTDK Shaikshnik Sankul', leftX + 16, 58, { width: cardWidth - 32, align: 'center' });
+
+      doc.moveDown(5);
+      doc.fillColor('#1a1a2e').fontSize(12).font('Helvetica-Bold').text('Registration Details', leftX, 130);
+      doc.moveTo(leftX, 145).lineTo(leftX + cardWidth, 145).stroke('#e2e8f0');
 
       const lines = [
         ['Registration No.', student.reg_no || student.regNo || ''],
@@ -210,15 +215,27 @@ async function generateRegistrationPdfBuffer(student) {
         ['Exam Centre', 'MTDK School']
       ];
 
-      let y = doc.y;
-      lines.forEach(([label, val]) => {
-        doc.fillColor('#64748b').fontSize(9).text(label, 30, y);
-        doc.fillColor('#1a1a2e').fontSize(9).text(String(val || ''), 160, y);
-        y += 16;
+      const labelX = leftX + 12;
+      const valueX = leftX + 140;
+      let y = 160;
+
+      lines.forEach(([label, val], index) => {
+        if (index > 0 && index % 5 === 0) {
+          y += 8;
+        }
+        doc.fillColor('#475569').fontSize(10).font('Helvetica-Bold').text(label, labelX, y);
+        doc.fillColor('#0f2b5c').fontSize(10).font('Helvetica').text(String(val || ''), valueX, y, { width: cardWidth - valueX - 12 });
+        y += 20;
       });
 
-      doc.moveTo(30, y + 8);
-      doc.fillColor('#64748b').fontSize(8).text('Initiative by MTDK Shaikshnik Sankul', 30, doc.page.height - 40, { align: 'center' });
+      const noteTop = y + 8;
+      doc.roundedRect(leftX, noteTop, cardWidth, 88, 8).fill('#f8fafc');
+      doc.fillColor('#334155').fontSize(10).font('Helvetica').text('Exam Date: 14 February 2027', leftX + 12, noteTop + 12);
+      doc.text('Time: 10:00 AM to 12:00 PM', leftX + 12, noteTop + 28);
+      doc.text('Exam Centre: MTDK School', leftX + 12, noteTop + 44);
+      doc.fillColor('#475569').fontSize(9).text('Please carry this admit card along with a valid photo ID on exam day.', leftX + 12, noteTop + 60, { width: cardWidth - 24 });
+
+      doc.fillColor('#64748b').fontSize(8).text('Initiative by MTDK Shaikshnik Sankul', leftX, doc.page.height - 36, { align: 'center', width: cardWidth });
 
       doc.end();
     } catch (err) {
