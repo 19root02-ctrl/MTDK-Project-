@@ -81,12 +81,18 @@ async function sendApprovalEmail(student) {
   </div>`;
 
   try {
+    if (!process.env.BREVO_API_KEY) {
+      throw new Error('BREVO_API_KEY is missing from environment variables');
+    }
+
+    console.log('[EMAIL] BREVO_API_KEY configured:', !!process.env.BREVO_API_KEY);
+
     const response = await axios.post(
       'https://api.brevo.com/v3/smtp/email',
       {
         sender: {
-          name: 'IMTSE Portal',
-          email: getSenderEmail() || 'noreply@imtse.org'
+          name: 'MTDK Shaikshnik Sankul',
+          email: 'ignitedmind.mtdk@gmail.com'
         },
         to: [
           {
@@ -105,26 +111,30 @@ async function sendApprovalEmail(student) {
       },
       {
         headers: {
-          'api-key': process.env.BREVO_API_KEY || '',
-          'Content-Type': 'application/json'
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         timeout: 30000
       }
     );
 
-    console.log('[EMAIL] Sent successfully', response.data);
+    console.log('[EMAIL] Sent successfully', response && response.data ? { status: response.status, dataSummary: response.data } : 'no-response');
     return {
       ok: true,
-      messageId: response.data.messageId || null
+      messageId: response.data && response.data.messageId ? response.data.messageId : null
     };
   } catch (e) {
     const errorMessage = e && e.message ? e.message : String(e);
-    const errorStack = e && e.stack ? e.stack : '';
-    console.error('[EMAIL] Mail send failed');
-    console.error('[SMTP] Error message:', errorMessage);
-    if (errorStack) console.error('[SMTP] Error stack:', errorStack);
-    if (e && e.code) console.error('[SMTP] Error code:', e.code);
-    if (e && e.response) console.error('[SMTP] SMTP response:', e.response);
+    console.error('[EMAIL] Mail send failed:', errorMessage);
+    if (e && e.response) {
+      try {
+        const respStatus = e.response.status;
+        const respData = e.response.data;
+        console.error('[EMAIL] Brevo response status:', respStatus);
+        console.error('[EMAIL] Brevo response data:', respData);
+      } catch (innerErr) {}
+    }
     return { ok: false, reason: 'send-failed', error: errorMessage };
   }
 }
