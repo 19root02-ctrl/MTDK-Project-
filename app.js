@@ -1067,7 +1067,7 @@ function showDashboardView(student) {
         existingNotice.style.background = "#f0fdf4";
         existingNotice.style.color = "#166534";
         existingNotice.style.border = "1px solid #86efac";
-        existingNotice.innerHTML = "Your registration is <strong>approved</strong>! Admit card available from 10 Aug 2026 13:00 IST.";
+        existingNotice.innerHTML = "Your registration is <strong>approved</strong>! Admit card available from 13 Aug 2026 17:00 IST.";
     } else {
         existingNotice.style.display = "none";
     }
@@ -1075,7 +1075,7 @@ function showDashboardView(student) {
     // Hall Ticket Download Button
     const admitCardBtn = document.querySelector(".sidebar-item[onclick*='downloadHallTicket']") ||
                          document.querySelector("[onclick*='downloadHallTicket']");
-    const hallTicketUnlockDate = new Date(Date.UTC(2026, 7, 10, 7, 30));
+    const hallTicketUnlockDate = new Date(Date.UTC(2026, 7, 13, 11, 30));
     const today = new Date();
     const isUnlocked = today.getTime() >= hallTicketUnlockDate.getTime();
 
@@ -1445,6 +1445,13 @@ function downloadHallTicket(studentOverride = null) {
     const student = studentOverride || activeStudentSession;
     if (!student) {
         alert("Please login or select a student to download the Hall Ticket.");
+        return;
+    }
+
+    const hallTicketUnlockDate = new Date(Date.UTC(2026, 7, 13, 11, 30));
+    const now = new Date();
+    if (now.getTime() < hallTicketUnlockDate.getTime()) {
+        alert("Hall ticket is locked until 13 August 2026 17:00 IST.");
         return;
     }
 
