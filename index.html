@@ -747,7 +747,7 @@
                                             Simulate Successful Payment Approval
                                         </button>
                                         <div class="screenshot-upload-block">
-                                            <label for="paymentScreenshotInput">Upload Payment Screenshot (optional)</label>
+                                            <label for="paymentScreenshotInput">Upload Payment Screenshot (required)</label>
                                             <input type="file" id="paymentScreenshotInput" accept="image/*" capture="environment">
                                             <small>If your UPI app does not auto-verify, upload the payment screenshot here.</small>
                                         </div>
@@ -897,7 +897,7 @@
                                     <span class="info-label">Exam Time</span>
                                 </div>
                             </div>
-                            <span class="info-value" id="recExamTime">10:00 AM to 12:00 PM</span>
+                            <span class="info-value" id="recExamTime">11:00 AM to 1:00 PM</span>
                         </div>
                         <div class="receipt-info-row">
                             <div class="receipt-info-left">
@@ -951,9 +951,9 @@
                         <h3>Admin Access</h3>
                         <form id="adminLoginForm" onsubmit="handleAdminLogin(event)">
                             <label for="adminUsername">Username</label>
-                            <input type="text" id="adminUsername" placeholder="Enter admin username" value="admin" required>
+                            <input type="text" id="adminUsername" placeholder="Enter admin username" value="" required>
                             <label for="adminPassword">Password</label>
-                            <input type="password" id="adminPassword" placeholder="Enter admin password" value="admin" required>
+                            <input type="password" id="adminPassword" placeholder="Enter admin password" value="" required>
                             <button type="submit" class="btn-primary btn-block">Unlock Panel</button>
                         </form>
                     </div>

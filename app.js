@@ -597,6 +597,12 @@ function handlePaymentModeChange(mode) {
     document.getElementById("upiPaymentSimulator").classList.add("hidden");
     document.getElementById("cashPaymentNotice").classList.add("hidden");
     
+    // Update screenshot requirement
+    const screenshotInput = document.getElementById("paymentScreenshotInput");
+    if (screenshotInput) {
+        screenshotInput.required = mode === "UPI";
+    }
+    
     // Show correct simulator
     if (mode === "UPI") {
         document.getElementById("upiPaymentSimulator").classList.remove("hidden");
@@ -630,6 +636,11 @@ function startUPITimer(durationSeconds) {
 }
 
 function verifyUPISimulation() {
+    const screenshotInput = document.getElementById("paymentScreenshotInput");
+    if (!screenshotInput || !screenshotInput.files || screenshotInput.files.length === 0) {
+        alert("Please upload a UPI payment screenshot before verification.");
+        return;
+    }
     clearInterval(upiTimerInterval);
     isPaymentApproved = true;
     alert("Simulated UPI payment verified successfully!");
@@ -699,6 +710,14 @@ async function handleFormSubmit(event) {
         return;
     }
 
+    if (selectedPaymentMode === "UPI") {
+        const screenshotInput = document.getElementById("paymentScreenshotInput");
+        if (!screenshotInput || !screenshotInput.files || screenshotInput.files.length === 0) {
+            alert("UPI payment screenshot is required to complete registration.");
+            return;
+        }
+    }
+
     // Create student object in local mock database
     const newStudent = {
         fullName: nameVal,
@@ -752,7 +771,7 @@ async function handleFormSubmit(event) {
     document.getElementById("recClassMedium").innerText = `Class ${classVal} - ${mediumVal}`;
     document.getElementById("recAmount").innerText = totalAmount;
     document.getElementById("recExamDate").innerText = "14 February 2027";
-    document.getElementById("recExamTime").innerText = "10:00 AM to 12:00 PM";
+    document.getElementById("recExamTime").innerText = "11:00 AM to 1:00 PM";
     document.getElementById("recExamCentre").innerText = "MTDK School";
     
     const statusStamp = document.getElementById("recStatus");
@@ -1048,7 +1067,7 @@ function showDashboardView(student) {
         existingNotice.style.background = "#f0fdf4";
         existingNotice.style.color = "#166534";
         existingNotice.style.border = "1px solid #86efac";
-        existingNotice.innerHTML = "Your registration is <strong>approved</strong>! Admit card available from 01 Aug 2024 10:30.";
+        existingNotice.innerHTML = "Your registration is <strong>approved</strong>! Admit card available from 10 Aug 2026 13:00 IST.";
     } else {
         existingNotice.style.display = "none";
     }
@@ -1056,9 +1075,9 @@ function showDashboardView(student) {
     // Hall Ticket Download Button
     const admitCardBtn = document.querySelector(".sidebar-item[onclick*='downloadHallTicket']") ||
                          document.querySelector("[onclick*='downloadHallTicket']");
-    const hallTicketUnlockDate = new Date(2024, 7, 1, 10, 30);
+    const hallTicketUnlockDate = new Date(Date.UTC(2026, 7, 10, 7, 30));
     const today = new Date();
-    const isUnlocked = today >= hallTicketUnlockDate;
+    const isUnlocked = today.getTime() >= hallTicketUnlockDate.getTime();
 
     if (admitCardBtn) {
         if (!isApproved) {
@@ -1072,7 +1091,7 @@ function showDashboardView(student) {
         } else if (!isUnlocked) {
             admitCardBtn.style.opacity = "0.5";
             admitCardBtn.style.pointerEvents = "none";
-            admitCardBtn.title = "Admit card will be available from 01 August 2024 10:30";
+            admitCardBtn.title = "Admit card will be available from 10 August 2026 13:00 IST";
         } else {
             admitCardBtn.style.opacity = "1";
             admitCardBtn.style.pointerEvents = "auto";
@@ -1305,13 +1324,24 @@ function generateOfficialHallTicketHtml(student) {
         font-style: italic;
         margin: 0 12px;
     }
+    .page {
+        display: block;
+        width: 100%;
+        min-height: 280mm;
+    }
+    .page-break {
+        page-break-before: always;
+        break-before: page;
+    }
     @media print {
         body { padding: 0; }
         .no-print { display: none !important; }
+        .page { page-break-after: always; }
     }
 </style>
 </head>
 <body>
+<div class="page page-one">
 <div class="no-print" style="text-align: center; margin-bottom: 15px;">
     <button onclick="window.print()" style="padding: 10px 24px; font-size: 16px; font-weight: bold; background: #0f2b5c; color: white; border: none; border-radius: 6px; cursor: pointer;">
         Print / Download Hall Ticket
@@ -1328,7 +1358,7 @@ function generateOfficialHallTicketHtml(student) {
             <td class="header-boxes-col">
                 <div class="info-box">
                     <div>Exam Date : <strong>14 February 2027</strong></div>
-                    <div>Time : <strong>10:00 AM to 12:00 PM</strong></div>
+                    <div>Time : <strong>11:00 AM to 1:00 PM</strong></div>
                 </div>
                 <div class="info-box">
                     <div>Seat No. : <strong>${seatNo}</strong></div>
@@ -1372,32 +1402,41 @@ function generateOfficialHallTicketHtml(student) {
         </tr>
     </table>
 
-    <div class="rules-container">
-        <div class="rules-header-badge">RULES AND REGULATIONS</div>
-        <table class="rules-grid-table">
-            <tr>
-                <td class="rule-divider">
-                    <div class="rule-row"><span class="rule-num">1.</span><span>हा हॉल तिकीट परीक्षा केंद्रात सोबत आणणे आवश्यक आहे.</span></div>
-                    <div class="rule-row"><span class="rule-num">2.</span><span>परीक्षेला 30 मिनिटे आधी परीक्षा केंद्रावर उपस्थित राहावे.</span></div>
-                    <div class="rule-row"><span class="rule-num">3.</span><span>स्वतःचा निळा/काळा बॉल पेन सोबत आणावा.</span></div>
-                    <div class="rule-row"><span class="rule-num">4.</span><span>मोबाईल फोन, स्मार्ट वॉच व इतर इलेक्ट्रॉनिक साधने पूर्णपणे बंदी आहेत.</span></div>
-                    <div class="rule-row"><span class="rule-num">5.</span><span>उत्तरपत्रिकेवर आपले नाव व सीट क्रमांक योग्यरीत्या लिहावा.</span></div>
-                </td>
-                <td>
-                    <div class="rule-row"><span class="rule-num">6.</span><span>उत्तर लिहाव्यांच्या उत्तरपत्रिकेकडे पहाची किंवा कोणतीही मदत घेणे/देणे गुन्हा आहे.</span></div>
-                    <div class="rule-row"><span class="rule-num">7.</span><span>परीक्षेदरम्यान कोणतीही अनुचित हालचाल केल्यास किंवा नियमांचे उल्लंघन केल्यास आपली परीक्षा रद्द केली जाऊ शकते.</span></div>
-                    <div class="rule-row"><span class="rule-num">8.</span><span>प्रश्नपत्रिका मिळाल्यावर ती पूर्ण तपासावी. काही त्रुटी असल्यास त्वरित पर्यवेक्षकांना कळवावे.</span></div>
-                    <div class="rule-row"><span class="rule-num">9.</span><span>परीक्षा संपल्यावर उत्तरपत्रिका व प्रश्नपत्रिका पर्यवेक्षकांकडे जमा करावी.</span></div>
-                    <div class="rule-row"><span class="rule-num">10.</span><span>वरील नियमांचे पालन करणे सर्व विद्यार्थ्यांसाठी अनिवार्य आहे.</span></div>
-                </td>
-            </tr>
-        </table>
+    <div class="rules-container" style="padding: 16px; margin-top: 16px;">
+        <div class="rules-header-badge" style="top: -12px; padding: 4px 16px; font-size: 12px;">PAGE 2</div>
+        <p style="margin: 0; font-size: 14px; font-weight: 700; line-height: 1.6; text-align: center;">Please turn over to page 2 for exam rules and important instructions.</p>
     </div>
+    </div>
+    </div>
+    <div class="page page-two page-break">
+    <div class="hall-ticket-outer">
+        <div class="rules-container">
+            <div class="rules-header-badge">RULES AND REGULATIONS</div>
+            <table class="rules-grid-table">
+                <tr>
+                    <td class="rule-divider">
+                        <div class="rule-row"><span class="rule-num">1.</span><span>हा हॉल तिकीट परीक्षा केंद्रात सोबत आणणे आवश्यक आहे.</span></div>
+                        <div class="rule-row"><span class="rule-num">2.</span><span>परीक्षेला 30 मिनिटे आधी परीक्षा केंद्रावर उपस्थित राहावे.</span></div>
+                        <div class="rule-row"><span class="rule-num">3.</span><span>स्वतःचा निळा/काळा बॉल पेन सोबत आणावा.</span></div>
+                        <div class="rule-row"><span class="rule-num">4.</span><span>मोबाईल फोन, स्मार्ट वॉच व इतर इलेक्ट्रॉनिक साधने पूर्णपणे बंदी आहेत.</span></div>
+                        <div class="rule-row"><span class="rule-num">5.</span><span>उत्तरपत्रिकेवर आपले नाव व सीट क्रमांक योग्यरीत्या लिहावा.</span></div>
+                    </td>
+                    <td>
+                        <div class="rule-row"><span class="rule-num">6.</span><span>उत्तर लिहाव्यांच्या उत्तरपत्रिकेकडे पहाची किंवा कोणतीही मदत घेणे/देणे गुन्हा आहे.</span></div>
+                        <div class="rule-row"><span class="rule-num">7.</span><span>परीक्षेदरम्यान कोणतीही अनुचित हालचाल केल्यास किंवा नियमांचे उल्लंघन केल्यास आपली परीक्षा रद्द केली जाऊ शकते.</span></div>
+                        <div class="rule-row"><span class="rule-num">8.</span><span>प्रश्नपत्रिका मिळाल्यावर ती पूर्ण तपासावी. काही त्रुटी असल्यास त्वरित पर्यवेक्षकांना कळवावे.</span></div>
+                        <div class="rule-row"><span class="rule-num">9.</span><span>परीक्षा संपल्यावर उत्तरपत्रिका व प्रश्नपत्रिका पर्यवेक्षकांकडे जमा करावी.</span></div>
+                        <div class="rule-row"><span class="rule-num">10.</span><span>वरील नियमांचे पालन करणे सर्व विद्यार्थ्यांसाठी अनिवार्य आहे.</span></div>
+                    </td>
+                </tr>
+            </table>
+        </div>
 
-    <div class="footer-stars-row">
-        * * * <span>Initiative by MTDK Shaikshnik Sankul</span> * * *
+        <div class="footer-stars-row">
+            * * * <span>Initiative by MTDK Shaikshnik Sankul</span> * * *
+        </div>
     </div>
-</div>
+    </div>
 </body>
 </html>`;
 }
@@ -1594,7 +1633,8 @@ function handleAdminLogin(event) {
     event.preventDefault();
     const username = document.getElementById("adminUsername").value.trim();
     const password = document.getElementById("adminPassword").value;
-    if (username === "admin" && password === "admin") {
+    // Updated admin credentials: username 'MTDK', password 'MTDK@123'
+    if (username === "MTDK" && password === "MTDK@123") {
         adminSession = true;
         document.getElementById("adminAccessCard").classList.add("hidden");
         document.getElementById("adminPanelContent").classList.remove("hidden");

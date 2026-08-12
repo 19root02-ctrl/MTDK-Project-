@@ -1376,7 +1376,8 @@ function handleAdminLogin(event) {
     event.preventDefault();
     const username = document.getElementById("adminUsername").value.trim();
     const password = document.getElementById("adminPassword").value;
-    if (username === "admin" && password === "admin") {
+    // Updated admin credentials: username 'MTDK', password 'MTDK@123'
+    if (username === "MTDK" && password === "MTDK@123") {
         adminSession = true;
         document.getElementById("adminAccessCard").classList.add("hidden");
         document.getElementById("adminPanelContent").classList.remove("hidden");

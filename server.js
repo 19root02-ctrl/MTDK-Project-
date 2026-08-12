@@ -65,9 +65,9 @@ async function sendApprovalEmail(student) {
       </div>
       <p style="color:#475569;font-size:14px;line-height:1.9;">
         Exam Date: <strong>14 February 2027</strong><br>
-        Time: <strong>10:00 AM to 12:00 PM</strong><br>
+        Time: <strong>11:00 AM to 1:00 PM</strong><br>
         Exam Centre: <strong>MTDK School</strong><br>
-        Admit Card Available From: <strong>${process.env.HALL_TICKET_UNLOCK_DATE || '01 August 2024 10:30'}</strong>
+        Admit Card Available From: <strong>${process.env.HALL_TICKET_UNLOCK_DATE || '10 August 2026 13:00 IST'}</strong>
       </p>
       <p style="color:#475569;font-size:14px;">Your official registration PDF is attached to this email.</p>
       <div style="margin-top:20px;padding:14px;background:#fef9c3;border-left:4px solid #f59e0b;border-radius:4px;font-size:13px;color:#92400e;">
@@ -192,6 +192,17 @@ function normalizeDate(value) {
   return null;
 }
 
+function formatDateWithDay(value) {
+  if (!value) return '';
+  const normalized = normalizeDate(value) || String(value).trim();
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value).trim();
+  }
+  const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+  return parsed.toLocaleDateString('en-IN', options);
+}
+
 async function generateRegistrationPdfBuffer(student) {
   return new Promise((resolve, reject) => {
     try {
@@ -219,9 +230,9 @@ async function generateRegistrationPdfBuffer(student) {
         ['School Name', student.school_name || student.schoolName || ''],
         ['Amount Paid', student.amount || ''],
         ['Payment Mode', student.pay_mode || student.payMode || ''],
-        ['Date of Registration', student.reg_date || student.regDate || ''],
+        ['Date of Registration', formatDateWithDay(student.reg_date || student.regDate || '')],
         ['Exam Date', '14 February 2027'],
-        ['Exam Time', '10:00 AM to 12:00 PM'],
+        ['Exam Time', '11:00 AM to 1:00 PM'],
         ['Exam Centre', 'MTDK School']
       ];
 
@@ -233,15 +244,15 @@ async function generateRegistrationPdfBuffer(student) {
         if (index > 0 && index % 5 === 0) {
           y += 8;
         }
-        doc.fillColor('#475569').fontSize(10).font('Helvetica-Bold').text(label, labelX, y);
-        doc.fillColor('#0f2b5c').fontSize(10).font('Helvetica').text(String(val || ''), valueX, y, { width: cardWidth - valueX - 12 });
+        doc.fillColor('#475569').fontSize(10).font('Helvetica-Bold').text(label, labelX, y, { lineBreak: false });
+        doc.fillColor('#0f2b5c').fontSize(10).font('Helvetica').text(String(val || ''), valueX, y, { width: cardWidth - valueX - 12, lineBreak: false });
         y += 20;
       });
 
       const noteTop = y + 8;
       doc.roundedRect(leftX, noteTop, cardWidth, 88, 8).fill('#f8fafc');
       doc.fillColor('#334155').fontSize(10).font('Helvetica').text('Exam Date: 14 February 2027', leftX + 12, noteTop + 12);
-      doc.text('Time: 10:00 AM to 12:00 PM', leftX + 12, noteTop + 28);
+      doc.text('Time: 11:00 AM to 1:00 PM', leftX + 12, noteTop + 28);
       doc.text('Exam Centre: MTDK School', leftX + 12, noteTop + 44);
       doc.fillColor('#475569').fontSize(9).text('Please carry this admit card along with a valid photo ID on exam day.', leftX + 12, noteTop + 60, { width: cardWidth - 24 });
 
@@ -419,6 +430,9 @@ function createServer(options = {}) {
       const regDateValue = normalizeDate(student.regDate) || normalizeDate(new Date());
       const whatsapp = String(student.whatsapp || '').trim();
       if (!whatsapp) return res.status(400).json({ error: 'Mobile number is required' });
+      if ((student.payMode || '').toString().toLowerCase().includes('upi') && !student.paymentScreenshotData) {
+        return res.status(400).json({ error: 'Payment screenshot is required for UPI payments' });
+      }
 
       if (isDbConnected && connectionPool) {
         try {
