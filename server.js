@@ -449,7 +449,12 @@ function createServer(options = {}) {
   }
 
   app.get('/api/health', async (_req, res) => {
-    res.json({ status: 'ok', dbConnected: isDbConnected, error: dbInitError ? String(dbInitError.message || dbInitError) : null });
+    res.json({
+      status: 'ok',
+      dbConnected: isDbConnected,
+      error: dbInitError ? String(dbInitError.message || dbInitError) : null,
+      hallTicketUnlockDate: process.env.HALL_TICKET_UNLOCK_DATE || null
+    });
   });
 
   const allowInMemoryFallback = process.env.ALLOW_IN_MEMORY_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
