@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const path = require('path');
 const dotenv = require('dotenv');
 const PDFDocument = require('pdfkit');
@@ -13,7 +13,14 @@ if (!global.__resources) global.__resources = [];
 
 let connectionPool = null;
 let isDbConnected = false;
+let dbInitError = null;
 let injectedEmailTransporter = null;
+
+function getQueryRows(result) {
+  if (!result) return [];
+  if (Array.isArray(result)) return Array.isArray(result[0]) ? result[0] : [];
+  return Array.isArray(result.rows) ? result.rows : [];
+}
 
 function setInjectedEmailTransporter(transporter) {
   injectedEmailTransporter = transporter;
@@ -81,6 +88,24 @@ async function sendApprovalEmail(student) {
   </div>`;
 
   try {
+    if (injectedEmailTransporter && typeof injectedEmailTransporter.sendMail === 'function') {
+      const mailResult = await injectedEmailTransporter.sendMail({
+        from: getSenderEmail() || 'ignitedmind.mtdk@gmail.com',
+        to: studentEmail,
+        subject: `IMTSE 2026-27 - Registration Confirmed | Reg No. ${regNo}`,
+        html: emailBody,
+        attachments: [{
+          filename: `IMTSE_Registration_${regNo}.pdf`,
+          content: pdfBuffer
+        }]
+      });
+      console.log('[EMAIL] Sent via injected transporter successfully', mailResult && mailResult.messageId ? { messageId: mailResult.messageId } : 'no-message-id');
+      return {
+        ok: true,
+        messageId: mailResult && mailResult.messageId ? mailResult.messageId : null
+      };
+    }
+
     if (!process.env.BREVO_API_KEY) {
       throw new Error('BREVO_API_KEY is missing from environment variables');
     }
@@ -265,34 +290,66 @@ async function generateRegistrationPdfBuffer(student) {
   });
 }
 
+function getPgSslSetting() {
+  const sslValue = String(process.env.PGSSL || process.env.PGSSLMODE || process.env.SSL || '').toLowerCase();
+  if (!sslValue) return false;
+  return ['true', '1', 'require', 'verify-ca', 'verify-full'].includes(sslValue) ? { rejectUnauthorized: false } : false;
+}
+
+function buildPgConfig() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    return {
+      connectionString: databaseUrl,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      ssl: getPgSslSetting() || undefined
+    };
+  }
+
+  const config = {
+    host: process.env.PGHOST || process.env.DB_HOST || '127.0.0.1',
+    port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
+    user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+    password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.PGDATABASE || process.env.DB_NAME || 'imtse_portal',
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
+  };
+
+  const ssl = getPgSslSetting();
+  if (ssl) config.ssl = ssl;
+
+  return config;
+}
+
 async function tryInitDatabase(providedPool = null) {
   if (providedPool) {
     connectionPool = providedPool;
     isDbConnected = true;
+    dbInitError = null;
     return;
   }
 
   try {
-    const databaseName = process.env.DB_NAME || process.env.MYSQLDATABASE || 'imtse_portal';
-    console.log('DB_HOST =', process.env.DB_HOST);
-    console.log('MYSQLHOST =', process.env.MYSQLHOST);
-    console.log('DB_PORT =', process.env.DB_PORT);
-    console.log('MYSQLPORT =', process.env.MYSQLPORT);
-    console.log('DB_NAME =', process.env.DB_NAME || process.env.MYSQLDATABASE);
+    const config = buildPgConfig();
+    const hasExplicitPgSettings = Boolean(process.env.DATABASE_URL || process.env.PGHOST || process.env.PGUSER || process.env.PGDATABASE || process.env.DB_HOST || process.env.DB_USER || process.env.DB_NAME);
+    if (!hasExplicitPgSettings) {
+      throw new Error('No PostgreSQL configuration found. Set DATABASE_URL or PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE.');
+    }
 
-    connectionPool = mysql.createPool({
-      host: process.env.DB_HOST || process.env.MYSQLHOST,
-      port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
-      user: process.env.DB_USER || process.env.MYSQLUSER,
-      password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
-      database: databaseName,
-      connectionLimit: 10,
-      waitForConnections: true,
-      queueLimit: 0,
-    });
+    connectionPool = new Pool(config);
+    if (typeof connectionPool.on === 'function') {
+      connectionPool.on('error', (err) => {
+        console.error('PostgreSQL pool error:', err && err.message ? err.message : err);
+        isDbConnected = false;
+        dbInitError = err;
+      });
+    }
 
-    await connectionPool.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
-    await connectionPool.query(`USE \`${databaseName}\``);
+    await connectionPool.query('SELECT 1');
     await connectionPool.query(`
       CREATE TABLE IF NOT EXISTS students (
         reg_no VARCHAR(50) NOT NULL,
@@ -307,52 +364,63 @@ async function tryInitDatabase(providedPool = null) {
         address TEXT NOT NULL,
         amount VARCHAR(50) NOT NULL,
         pay_mode VARCHAR(100) NOT NULL,
+        payment_screenshot_name VARCHAR(255) NULL,
+        payment_screenshot_data TEXT NULL,
         status VARCHAR(100) NOT NULL DEFAULT 'Pending Verification',
         reg_date DATE NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (whatsapp),
-        UNIQUE KEY uniq_reg_no (reg_no)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        CONSTRAINT uniq_reg_no UNIQUE (reg_no)
+      );
     `);
+
     try {
-      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN payment_screenshot_name VARCHAR(255) NULL AFTER pay_mode`);
+      await connectionPool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS payment_screenshot_name VARCHAR(255);`);
     } catch (e) {}
     try {
-      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN payment_screenshot_data LONGTEXT NULL AFTER payment_screenshot_name`);
+      await connectionPool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS payment_screenshot_data TEXT;`);
     } catch (e) {}
     try {
-      await connectionPool.query(`ALTER TABLE \`${databaseName}\`.students ADD COLUMN email VARCHAR(255) NULL AFTER whatsapp`);
+      await connectionPool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS email VARCHAR(255);`);
     } catch (e) {}
 
     await connectionPool.query(`
       CREATE TABLE IF NOT EXISTS admin_users (
-        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
         username VARCHAR(50) NOT NULL UNIQUE,
         password VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     await connectionPool.query(`
       CREATE TABLE IF NOT EXISTS study_resources (
-        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         category VARCHAR(50) NOT NULL,
         resource_type VARCHAR(20) NOT NULL,
         url VARCHAR(1000) NULL,
         description TEXT NULL,
         file_name VARCHAR(255) NULL,
-        file_data LONGTEXT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        file_data TEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await connectionPool.query(`
+      INSERT INTO admin_users (username, password)
+      VALUES ('admin', 'admin')
+      ON CONFLICT (username) DO UPDATE SET password = EXCLUDED.password;
     `);
 
     isDbConnected = true;
-    console.log('MySQL Database initialized successfully');
+    dbInitError = null;
+    console.log('PostgreSQL database initialized successfully');
   } catch (err) {
     isDbConnected = false;
-    console.warn('MySQL initialization failed, falling back to in-memory store:', err.message);
+    dbInitError = err;
+    connectionPool = null;
+    console.error('PostgreSQL initialization failed:', err && err.message ? err.message : err);
+    throw err;
   }
 }
 
@@ -374,16 +442,23 @@ function createServer(options = {}) {
     setInjectedEmailTransporter(options.emailTransporter);
   }
 
-  tryInitDatabase(options.pool || null);
+  try {
+    tryInitDatabase(options.pool || null);
+  } catch (e) {
+    console.error('Failed to initialize PostgreSQL database:', e && e.message ? e.message : e);
+  }
 
   app.get('/api/health', async (_req, res) => {
-    res.json({ status: 'ok', dbConnected: isDbConnected });
+    res.json({ status: 'ok', dbConnected: isDbConnected, error: dbInitError ? String(dbInitError.message || dbInitError) : null });
   });
+
+  const allowInMemoryFallback = process.env.ALLOW_IN_MEMORY_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
 
   app.get('/api/students', async (_req, res) => {
     if (isDbConnected && connectionPool) {
       try {
-        const [rows] = await connectionPool.query('SELECT * FROM students ORDER BY created_at DESC');
+        const result = await connectionPool.query('SELECT * FROM students ORDER BY created_at DESC');
+        const rows = getQueryRows(result);
         const formatted = (rows || []).map(r => {
           const row = { ...r };
           if (row.dob instanceof Date) row.dob = row.dob.toISOString().split('T')[0];
@@ -394,8 +469,14 @@ function createServer(options = {}) {
         });
         return res.json(formatted);
       } catch (error) {
-        console.error('Failed to fetch students from DB, using fallback', error);
+        console.error('Failed to fetch students from PostgreSQL DB:', error);
+        if (!allowInMemoryFallback) {
+          return res.status(503).json({ error: 'Database unavailable', details: error.message || 'PostgreSQL query failed' });
+        }
       }
+    }
+    if (!allowInMemoryFallback) {
+      return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     return res.json(global.__students);
   });
@@ -404,10 +485,11 @@ function createServer(options = {}) {
     const identifier = String(req.params.studentId || '').trim();
     if (isDbConnected && connectionPool) {
       try {
-        const [rows] = await connectionPool.query(
-          `SELECT * FROM students WHERE reg_no = ? OR whatsapp = ? LIMIT 1`,
+        const result = await connectionPool.query(
+          `SELECT * FROM students WHERE reg_no = $1 OR whatsapp = $2 LIMIT 1`,
           [identifier, identifier]
         );
+        const rows = getQueryRows(result);
         if (rows && rows.length > 0) {
           const r = { ...rows[0] };
           if (r.dob instanceof Date) r.dob = r.dob.toISOString().split('T')[0];
@@ -416,7 +498,15 @@ function createServer(options = {}) {
           else if (typeof r.reg_date === 'string' && r.reg_date.indexOf('T') !== -1) r.reg_date = r.reg_date.split('T')[0];
           return res.json(r);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Failed to fetch student by ID from PostgreSQL DB:', e);
+        if (!allowInMemoryFallback) {
+          return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL query failed' });
+        }
+      }
+    }
+    if (!allowInMemoryFallback) {
+      return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     const student = global.__students.find(s => (s.regNo || s.reg_no) === identifier || s.whatsapp === identifier);
     if (student) return res.json(student);
@@ -436,23 +526,32 @@ function createServer(options = {}) {
 
       if (isDbConnected && connectionPool) {
         try {
-          const [existing] = await connectionPool.query('SELECT reg_no FROM students WHERE whatsapp = ? LIMIT 1', [whatsapp]);
-          if (existing && existing.length > 0) return res.status(409).json({ error: 'Mobile number already registered.' });
+          const existing = await connectionPool.query('SELECT reg_no FROM students WHERE whatsapp = $1 LIMIT 1', [whatsapp]);
+          const existingRows = getQueryRows(existing);
+          if (existingRows && existingRows.length > 0) return res.status(409).json({ error: 'Mobile number already registered.' });
 
           await connectionPool.query(`
             INSERT INTO students (reg_no, full_name, student_class, medium, school_name, dob, parent_name, whatsapp, email, address, amount, pay_mode, payment_screenshot_name, payment_screenshot_data, status, reg_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
           `, [
             student.regNo, student.fullName, student.class, student.medium, student.schoolName,
             dobValue, student.parentName, student.whatsapp, student.email || null,
             student.address, student.amount, student.payMode, student.paymentScreenshotName || null, student.paymentScreenshotData || null, student.status || 'Pending Verification', regDateValue
           ]);
+          return res.status(201).json({ regNo: student.regNo, message: 'Student saved successfully' });
         } catch (dbErr) {
-          if (dbErr.code === 'ER_DUP_ENTRY') {
+          if (dbErr && dbErr.code === '23505') {
             return res.status(409).json({ error: 'Mobile number already registered.' });
           }
-          console.warn('DB save failed, persisting to in-memory store:', dbErr.message);
+          console.warn('DB save failed:', dbErr && dbErr.message ? dbErr.message : dbErr);
+          if (!allowInMemoryFallback) {
+            return res.status(503).json({ error: 'Database unavailable', details: dbErr && dbErr.message ? dbErr.message : 'PostgreSQL save failed' });
+          }
         }
+      }
+
+      if (!allowInMemoryFallback) {
+        return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
       }
 
       const idx = global.__students.findIndex(s => s.whatsapp === whatsapp || (s.regNo && s.regNo === student.regNo));
@@ -475,19 +574,25 @@ function createServer(options = {}) {
 
       if (isDbConnected && connectionPool) {
         try {
-          const [rows] = await connectionPool.query(
-            `SELECT * FROM students WHERE reg_no = ? OR whatsapp = ? LIMIT 1`,
+          const result = await connectionPool.query(
+            `SELECT * FROM students WHERE reg_no = $1 OR whatsapp = $2 LIMIT 1`,
             [identifier, identifier]
           );
+          const rows = getQueryRows(result);
           if (rows && rows.length > 0) student = rows[0];
 
           await connectionPool.query(
-            `UPDATE students SET status = 'Approved & Active (Fees Paid)' WHERE reg_no = ? OR whatsapp = ?`,
+            `UPDATE students SET status = 'Approved & Active (Fees Paid)' WHERE reg_no = $1 OR whatsapp = $2`,
             [identifier, identifier]
           );
         } catch (dbError) {
           console.error('[APPROVAL] Database update failed', dbError && dbError.message ? dbError.message : dbError);
+          if (!allowInMemoryFallback) {
+            return res.status(503).json({ error: 'Database unavailable', details: dbError.message || 'PostgreSQL update failed' });
+          }
         }
+      } else if (!allowInMemoryFallback) {
+        return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
       }
 
       const memStudent = global.__students.find(s => (s.regNo || s.reg_no) === identifier || s.whatsapp === identifier);
@@ -532,8 +637,15 @@ function createServer(options = {}) {
       const identifier = String(req.params.studentId || '').trim();
       if (isDbConnected && connectionPool) {
         try {
-          await connectionPool.query(`UPDATE students SET status = 'Rejected' WHERE reg_no = ? OR whatsapp = ?`, [identifier, identifier]);
-        } catch (e) {}
+          await connectionPool.query(`UPDATE students SET status = 'Rejected' WHERE reg_no = $1 OR whatsapp = $2`, [identifier, identifier]);
+        } catch (e) {
+          console.error('Failed to update student rejection in PostgreSQL:', e);
+          if (!allowInMemoryFallback) {
+            return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL update failed' });
+          }
+        }
+      } else if (!allowInMemoryFallback) {
+        return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
       }
       const memStudent = global.__students.find(s => (s.regNo || s.reg_no) === identifier || s.whatsapp === identifier);
       if (memStudent) memStudent.status = 'Rejected';
@@ -554,16 +666,26 @@ function createServer(options = {}) {
       if (isDbConnected && connectionPool) {
         try {
           await connectionPool.query(`
-            UPDATE students SET full_name=?, student_class=?, medium=?, school_name=?, dob=?,
-              parent_name=?, whatsapp=?, email=?, address=?, amount=?, pay_mode=?, status=?, reg_date=?
-            WHERE reg_no = ? OR whatsapp = ?
+            UPDATE students SET full_name=$1, student_class=$2, medium=$3, school_name=$4, dob=$5,
+              parent_name=$6, whatsapp=$7, email=$8, address=$9, amount=$10, pay_mode=$11, status=$12, reg_date=$13
+            WHERE reg_no = $14 OR whatsapp = $15
           `, [
             student.fullName, student.class, student.medium, student.schoolName, dobValue,
             student.parentName, student.whatsapp, student.email || null, student.address,
             student.amount, student.payMode, student.status || 'Pending Verification', regDateValue,
             identifier, identifier
           ]);
-        } catch (e) {}
+          return res.json({ regNo: student.regNo || identifier, message: 'Student updated successfully' });
+        } catch (e) {
+          console.error('Failed to update student in PostgreSQL:', e);
+          if (!allowInMemoryFallback) {
+            return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL update failed' });
+          }
+        }
+      }
+
+      if (!allowInMemoryFallback) {
+        return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
       }
 
       const idx = global.__students.findIndex(s => (s.regNo || s.reg_no) === identifier || s.whatsapp === identifier);
@@ -580,9 +702,20 @@ function createServer(options = {}) {
       const identifier = String(req.params.studentId || '').trim();
       if (isDbConnected && connectionPool) {
         try {
-          await connectionPool.query('DELETE FROM students WHERE reg_no = ? OR whatsapp = ?', [identifier, identifier]);
-        } catch (e) {}
+          await connectionPool.query('DELETE FROM students WHERE reg_no = $1 OR whatsapp = $2', [identifier, identifier]);
+          return res.json({ regNo: identifier, message: 'Student deleted successfully' });
+        } catch (e) {
+          console.error('Failed to delete student in PostgreSQL:', e);
+          if (!allowInMemoryFallback) {
+            return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL delete failed' });
+          }
+        }
       }
+
+      if (!allowInMemoryFallback) {
+        return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
+      }
+
       global.__students = global.__students.filter(s => (s.regNo || s.reg_no) !== identifier && s.whatsapp !== identifier);
       res.json({ regNo: identifier, message: 'Student deleted successfully' });
     } catch (error) {
@@ -593,12 +726,21 @@ function createServer(options = {}) {
   app.get('/api/resources', async (_req, res) => {
     if (isDbConnected && connectionPool) {
       try {
-        const [rows] = await connectionPool.query(`SELECT * FROM study_resources ORDER BY created_at DESC`);
+        const result = await connectionPool.query(`SELECT * FROM study_resources ORDER BY created_at DESC`);
+        const rows = getQueryRows(result);
         return res.json((rows || []).map(r => ({
           id: r.id, title: r.title, category: r.category, type: r.resource_type,
           url: r.url, description: r.description, fileName: r.file_name, fileData: r.file_data, createdAt: r.created_at
         })));
-      } catch (e) {}
+      } catch (e) {
+        console.error('Failed to fetch resources from PostgreSQL DB:', e);
+        if (!allowInMemoryFallback) {
+          return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL query failed' });
+        }
+      }
+    }
+    if (!allowInMemoryFallback) {
+      return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     res.json(global.__resources);
   });
@@ -608,12 +750,22 @@ function createServer(options = {}) {
     resource.id = resource.id || Date.now();
     if (isDbConnected && connectionPool) {
       try {
-        const [result] = await connectionPool.query(
-          `INSERT INTO study_resources (title, category, resource_type, url, description, file_name, file_data) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        const result = await connectionPool.query(
+          `INSERT INTO study_resources (title, category, resource_type, url, description, file_name, file_data) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
           [resource.title, resource.category, resource.type, resource.url || '', resource.description || '', resource.fileName || '', resource.fileData || '']
         );
-        resource.id = result.insertId;
-      } catch (e) {}
+        const rows = getQueryRows(result);
+        if (rows && rows[0] && rows[0].id) resource.id = rows[0].id;
+        return res.status(201).json({ id: resource.id, message: 'Resource saved successfully' });
+      } catch (e) {
+        console.error('Failed to save resource in PostgreSQL:', e);
+        if (!allowInMemoryFallback) {
+          return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL insert failed' });
+        }
+      }
+    }
+    if (!allowInMemoryFallback) {
+      return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     global.__resources.push(resource);
     res.status(201).json({ id: resource.id, message: 'Resource saved successfully' });
@@ -625,10 +777,19 @@ function createServer(options = {}) {
     if (isDbConnected && connectionPool) {
       try {
         await connectionPool.query(
-          `UPDATE study_resources SET title=?, category=?, resource_type=?, url=?, description=?, file_name=?, file_data=? WHERE id=?`,
+          `UPDATE study_resources SET title=$1, category=$2, resource_type=$3, url=$4, description=$5, file_name=$6, file_data=$7 WHERE id=$8`,
           [resource.title, resource.category, resource.type, resource.url || '', resource.description || '', resource.fileName || '', resource.fileData || '', resourceId]
         );
-      } catch (e) {}
+        return res.json({ id: resourceId, message: 'Resource updated successfully' });
+      } catch (e) {
+        console.error('Failed to update resource in PostgreSQL:', e);
+        if (!allowInMemoryFallback) {
+          return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL update failed' });
+        }
+      }
+    }
+    if (!allowInMemoryFallback) {
+      return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     const idx = global.__resources.findIndex(r => r.id === resourceId);
     if (idx !== -1) global.__resources[idx] = { ...global.__resources[idx], ...resource };
@@ -639,8 +800,17 @@ function createServer(options = {}) {
     const resourceId = Number(req.params.id);
     if (isDbConnected && connectionPool) {
       try {
-        await connectionPool.query(`DELETE FROM study_resources WHERE id = ?`, [resourceId]);
-      } catch (e) {}
+        await connectionPool.query(`DELETE FROM study_resources WHERE id = $1`, [resourceId]);
+        return res.json({ id: resourceId, message: 'Resource deleted successfully' });
+      } catch (e) {
+        console.error('Failed to delete resource in PostgreSQL:', e);
+        if (!allowInMemoryFallback) {
+          return res.status(503).json({ error: 'Database unavailable', details: e.message || 'PostgreSQL delete failed' });
+        }
+      }
+    }
+    if (!allowInMemoryFallback) {
+      return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     global.__resources = global.__resources.filter(r => r.id !== resourceId);
     res.json({ id: resourceId, message: 'Resource deleted successfully' });

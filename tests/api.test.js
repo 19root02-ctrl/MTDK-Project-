@@ -3,51 +3,44 @@ const assert = require('node:assert/strict');
 const { createServer } = require('../server');
 
 /**
- * Creates a fake MySQL pool that handles all SQL patterns used by:
- * - initializeDatabase() (CREATE DATABASE, CREATE TABLE, ALTER TABLE, INSERT, SELECT, INFORMATION_SCHEMA)
- * - The API endpoints (INSERT, UPDATE, DELETE, SELECT)
+ * Creates a fake PostgreSQL-like pool that handles the SQL patterns used by the app.
+ * This keeps the project test coverage aligned with the PostgreSQL migration while
+ * preserving the same route contracts and validation logic.
  */
 function createFakePool(customHandlers = {}) {
   const state = {};
 
   const pool = {
     query: async (sql, params) => {
-      // ── Database initialization queries ──
-      if (/CREATE\s+DATABASE/i.test(sql)) {
-        return [{}, null];
-      }
-      if (/^\s*USE\s/i.test(sql)) {
-        return [{}, null];
-      }
-      if (/CREATE\s+TABLE/i.test(sql)) {
-        return [{}, null];
-      }
-      if (/ALTER\s+TABLE/i.test(sql)) {
-        return [{}, null];
-      }
-      if (/INSERT\s+INTO\s+admin_users/i.test(sql)) {
-        return [{}, null];
-      }
-      if (/INSERT\s+INTO\s+.+study_resources/i.test(sql)) {
-        return [{}, null];
-      }
-      if (/SELECT\s+COLUMN_NAME\s+FROM\s+INFORMATION_SCHEMA/i.test(sql)) {
-        return [[{ COLUMN_NAME: 'whatsapp' }], null];
+      const normalizedSql = String(sql || '').trim();
+
+      if (/SELECT\s+1/i.test(normalizedSql)) {
+        return { rows: [{ '?column?': 1 }] };
       }
 
-      // ── Student duplicate check ──
-      if (/SELECT\s+reg_no\s+FROM\s+students\s+WHERE\s+whatsapp/i.test(sql)) {
+      if (/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS/i.test(normalizedSql) || /ALTER\s+TABLE\s+students\s+ADD\s+COLUMN/i.test(normalizedSql)) {
+        return { rows: [] };
+      }
+
+      if (/INSERT\s+INTO\s+admin_users/i.test(normalizedSql)) {
+        return { rows: [] };
+      }
+
+      if (/INSERT\s+INTO\s+study_resources/i.test(normalizedSql)) {
+        return { rows: [{ id: 1 }] };
+      }
+
+      if (/SELECT\s+reg_no\s+FROM\s+students\s+WHERE\s+whatsapp\s*=\s*\$1/i.test(normalizedSql)) {
         return (customHandlers.duplicateWhatsapp)
-          ? [[{ reg_no: 'IMTSE-10001' }], null]
-          : [[], null];
+          ? { rows: [{ reg_no: 'IMTSE-10001' }] }
+          : { rows: [] };
       }
 
-      // ── SELECT single student ──
-      if (/SELECT\s+\*\s+FROM\s+students\s+WHERE\s+(reg_no|whatsapp)/i.test(sql)) {
+      if (/SELECT\s+\*\s+FROM\s+students\s+WHERE\s+reg_no\s*=\s*\$1\s+OR\s+whatsapp\s*=\s*\$2\s+LIMIT\s+1/i.test(normalizedSql)) {
         if (customHandlers.selectStudent) {
-          return [[customHandlers.selectStudent], null];
+          return { rows: [customHandlers.selectStudent] };
         }
-        return [[{
+        return { rows: [{
           reg_no: 'IMTSE-10001',
           full_name: 'TEST USER',
           student_class: 'VII',
@@ -62,12 +55,11 @@ function createFakePool(customHandlers = {}) {
           pay_mode: 'UPI',
           status: 'Approved',
           reg_date: '2026-07-19'
-        }], null];
+        }] };
       }
 
-      // ── SELECT all students ──
-      if (/SELECT\s+\*\s+FROM\s+students/i.test(sql)) {
-        return [[{
+      if (/SELECT\s+\*\s+FROM\s+students\s+ORDER\s+BY\s+created_at\s+DESC/i.test(normalizedSql)) {
+        return { rows: [{
           reg_no: 'IMTSE-10001',
           full_name: 'TEST USER',
           student_class: 'VII',
@@ -82,32 +74,39 @@ function createFakePool(customHandlers = {}) {
           pay_mode: 'UPI',
           status: 'Approved',
           reg_date: '2026-07-19'
-        }], null];
+        }] };
       }
 
-      // ── INSERT student ──
-      if (/INSERT\s+INTO\s+students/i.test(sql)) {
-        return [{ insertId: 1 }, null];
+      if (/INSERT\s+INTO\s+students/i.test(normalizedSql)) {
+        return { rows: [{ insertId: 1 }] };
       }
 
-      // ── UPDATE student ──
-      if (/UPDATE\s+students\s+SET/i.test(sql)) {
+      if (/UPDATE\s+students\s+SET\s+/i.test(normalizedSql)) {
         state.lastUpdate = { sql, params };
-        return [{ affectedRows: 1 }, null];
+        return { rows: [{ affectedRows: 1 }] };
       }
 
-      // ── DELETE student ──
-      if (/DELETE\s+FROM\s+students/i.test(sql)) {
-        return [{ affectedRows: 1 }, null];
+      if (/DELETE\s+FROM\s+students/i.test(normalizedSql)) {
+        return { rows: [{ affectedRows: 1 }] };
       }
 
-      // ── SELECT 1 (health check) ──
-      if (/SELECT\s+1/i.test(sql)) {
-        return [[{ '1': 1 }], null];
+      if (/INSERT\s+INTO\s+study_resources/i.test(normalizedSql)) {
+        return { rows: [{ id: 1 }] };
       }
 
-      // ── Fallback ──
-      return [[], null];
+      if (/UPDATE\s+study_resources\s+SET/i.test(normalizedSql)) {
+        return { rows: [{ affectedRows: 1 }] };
+      }
+
+      if (/DELETE\s+FROM\s+study_resources/i.test(normalizedSql)) {
+        return { rows: [{ affectedRows: 1 }] };
+      }
+
+      if (/SELECT\s+\*\s+FROM\s+study_resources/i.test(normalizedSql)) {
+        return { rows: [] };
+      }
+
+      return { rows: [] };
     }
   };
 
@@ -142,6 +141,8 @@ test('POST /api/students saves a student payload', async () => {
         address: 'TEST ADDRESS',
         amount: '\u20b9100.00',
         payMode: 'UPI',
+        paymentScreenshotData: 'data:image/png;base64,abc123',
+        paymentScreenshotName: 'upi.png',
         regNo: 'IMTSE-10001',
         status: 'Approved',
         regDate: '2026-07-19'
@@ -179,6 +180,8 @@ test('POST /api/students rejects duplicate whatsapp numbers', async () => {
         address: 'TEST ADDRESS',
         amount: '\u20b9100.00',
         payMode: 'UPI',
+        paymentScreenshotData: 'data:image/png;base64,abc123',
+        paymentScreenshotName: 'upi.png',
         regNo: 'IMTSE-10001',
         status: 'Approved',
         regDate: '2026-07-19'
