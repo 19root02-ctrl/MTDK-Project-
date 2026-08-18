@@ -1072,36 +1072,13 @@ function showDashboardView(student) {
         existingNotice.style.display = "none";
     }
 
-    // Hall Ticket Download Button — determine unlock date from server
+    // Hall Ticket Download Button — check availability status from API
     const admitCardBtn = document.querySelector(".sidebar-item[onclick*='downloadHallTicket']") ||
                          document.querySelector("[onclick*='downloadHallTicket']");
 
-    const defaultUnlockStr = '13 Aug 2026 17:00 IST';
-
-    function parseHumanUnlockDate(str) {
-        if (!str) return null;
-        const native = Date.parse(str);
-        if (!Number.isNaN(native)) return new Date(native);
-        const m = str.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
-        if (!m) return null;
-        const day = Number(m[1]);
-        const monthName = m[2].toLowerCase();
-        const year = Number(m[3]);
-        const hour = m[4] ? Number(m[4]) : 0;
-        const minute = m[5] ? Number(m[5]) : 0;
-        const monthMap = { january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11,jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
-        const mi = monthMap[monthName];
-        if (mi === undefined) return null;
-        return new Date(year, mi, day, hour, minute);
-    }
-
-    function applyUnlockLogic(unlockStr) {
-        const unlockDate = parseHumanUnlockDate(unlockStr) || parseHumanUnlockDate(defaultUnlockStr);
-        const today = new Date();
-        const isUnlocked = unlockDate ? (today.getTime() >= unlockDate.getTime()) : false;
-
+    function applyUnlockLogic(isUnlocked, unlockDateStr) {
         if (isApproved) {
-            existingNotice.innerHTML = `Your registration is <strong>approved</strong>! Admit card available from ${unlockStr || defaultUnlockStr}.`;
+            existingNotice.innerHTML = `Your registration is <strong>approved</strong>! Hall Ticket available from ${unlockDateStr}.`;
         }
 
         if (admitCardBtn) {
@@ -1109,14 +1086,14 @@ function showDashboardView(student) {
                 admitCardBtn.style.opacity = "0.4";
                 admitCardBtn.style.pointerEvents = "none";
                 admitCardBtn.title = isPending
-                    ? "Admit card will be available after admin approval"
+                    ? "Hall Ticket will be available after admin approval"
                     : isRejected
                     ? "Registration rejected"
                     : "Not available";
             } else if (!isUnlocked) {
                 admitCardBtn.style.opacity = "0.5";
                 admitCardBtn.style.pointerEvents = "none";
-                admitCardBtn.title = `Admit card will be available from ${unlockStr || defaultUnlockStr}`;
+                admitCardBtn.title = `Hall Ticket will be available on ${unlockDateStr}`;
             } else {
                 admitCardBtn.style.opacity = "1";
                 admitCardBtn.style.pointerEvents = "auto";
@@ -1125,12 +1102,19 @@ function showDashboardView(student) {
         }
     }
 
-    // Fetch unlock date from server health endpoint and apply logic
-    fetch('/api/health').then(r => r.json()).then(j => {
-        applyUnlockLogic(j && j.hallTicketUnlockDate ? j.hallTicketUnlockDate : defaultUnlockStr);
-    }).catch(() => {
-        applyUnlockLogic(defaultUnlockStr);
-    });
+    // Fetch Hall Ticket availability from server API
+    fetch('/api/hall-ticket/status')
+        .then(r => r.json())
+        .then(data => {
+            const isUnlocked = data.available === true;
+            const unlockDateStr = data.unlockDate || '20-08-2026 00:00 IST';
+            applyUnlockLogic(isUnlocked, unlockDateStr);
+        })
+        .catch(error => {
+            console.error('Failed to fetch Hall Ticket status:', error);
+            // Fallback: disable Hall Ticket button if we can't determine status
+            applyUnlockLogic(false, '20-08-2026 00:00 IST');
+        });
 
     // Countdown calculations (Exam: 14 Feb 2027)
     const examDate = new Date(2027, 1, 14);
@@ -1481,31 +1465,42 @@ function downloadHallTicket(studentOverride = null) {
         return;
     }
 
-    const hallTicketUnlockDate = new Date(Date.UTC(2026, 7, 13, 11, 30));
-    const now = new Date();
-    if (now.getTime() < hallTicketUnlockDate.getTime()) {
-        alert("Hall ticket is locked until 13 August 2026 17:00 IST.");
-        return;
-    }
-
-    const htmlContent = generateOfficialHallTicketHtml(student);
-    const win = window.open('', '_blank');
-    if (win) {
-        win.document.open();
-        win.document.write(htmlContent);
-        win.document.close();
-        win.onload = function() {
-            win.print();
-        };
-    } else {
-        const blob = new Blob([htmlContent], { type: 'text/html' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `IMTSE_HallTicket_${(student.regNo || student.whatsapp || 'ticket').replace(/[^a-zA-Z0-9_-]/g, '')}.html`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
+    // Check Hall Ticket availability via API
+    fetch('/api/hall-ticket/status')
+        .then(response => {
+            if (response.status === 403) {
+                // Hall Ticket is locked
+                return response.json().then(data => {
+                    alert(data.message || "Hall Ticket is not yet available.");
+                });
+            } else if (response.ok) {
+                // Hall Ticket is available, generate it
+                const htmlContent = generateOfficialHallTicketHtml(student);
+                const win = window.open('', '_blank');
+                if (win) {
+                    win.document.open();
+                    win.document.write(htmlContent);
+                    win.document.close();
+                    win.onload = function() {
+                        win.print();
+                    };
+                } else {
+                    const blob = new Blob([htmlContent], { type: 'text/html' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `IMTSE_HallTicket_${(student.regNo || student.whatsapp || 'ticket').replace(/[^a-zA-Z0-9_-]/g, '')}.html`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+            } else {
+                alert("Error checking Hall Ticket availability. Please try again.");
+            }
+        })
+        .catch(error => {
+            console.error('Failed to check Hall Ticket availability:', error);
+            alert("Error checking Hall Ticket availability. Please try again.");
+        });
 }
 
 function populateAdminCategoryOptions() {

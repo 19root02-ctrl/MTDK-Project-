@@ -5,6 +5,9 @@ const dotenv = require('dotenv');
 const PDFDocument = require('pdfkit');
 const axios = require('axios');
 
+// Load Hall Ticket configuration
+const hallTicketConfig = require('./hallTicketConfig.js');
+
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 // In-memory fallbacks
@@ -454,6 +457,32 @@ function createServer(options = {}) {
       dbConnected: isDbConnected,
       error: dbInitError ? String(dbInitError.message || dbInitError) : null,
       hallTicketUnlockDate: process.env.HALL_TICKET_UNLOCK_DATE || null
+    });
+  });
+
+  /**
+   * Hall Ticket Availability Endpoint
+   * Check if Hall Ticket is available for download
+   * Returns 403 if locked, 200 if available
+   */
+  app.get('/api/hall-ticket/status', async (_req, res) => {
+    const isAvailable = hallTicketConfig.isHallTicketAvailable();
+    const unlockDateDisplay = hallTicketConfig.getHallTicketUnlockDateDisplay();
+    
+    if (!isAvailable) {
+      return res.status(403).json({
+        success: false,
+        available: false,
+        message: `Hall Ticket will be available on ${unlockDateDisplay}`,
+        unlockDate: unlockDateDisplay
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      available: true,
+      message: 'Hall Ticket is available for download',
+      unlockDate: unlockDateDisplay
     });
   });
 
