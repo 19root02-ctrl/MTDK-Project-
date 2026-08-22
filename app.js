@@ -1,4 +1,21 @@
- // ==================== INITIALIZATION ====================
+const examConfiguration = window.hallTicketConfig || {};
+let hallTicketStatusTimer = null;
+let examCountdownTimer = null;
+
+function updateDashboardCountdown() {
+    const countDisplay = document.getElementById("countdownDays");
+    if (!countDisplay || !examConfiguration.EXAM_DATE) return;
+
+    const nowInIndia = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date());
+    const examDay = examConfiguration.EXAM_DATE.slice(0, 10);
+    const diffDays = Math.floor((Date.parse(`${examDay}T00:00:00+05:30`) - Date.parse(`${nowInIndia}T00:00:00+05:30`)) / 86400000);
+
+    countDisplay.innerText = diffDays > 0 ? diffDays : diffDays === 0 ? "0" : "EXAM STARTED";
+}
+
+// ==================== INITIALIZATION ====================
 function initApp() {
     // Initialize Lucide Icons
     try { lucide.createIcons(); } catch (e) {}
@@ -1076,9 +1093,11 @@ function showDashboardView(student) {
     const admitCardBtn = document.querySelector(".sidebar-item[onclick*='downloadHallTicket']") ||
                          document.querySelector("[onclick*='downloadHallTicket']");
 
-    function applyUnlockLogic(isUnlocked, unlockDateStr) {
+    function applyUnlockLogic(isUnlocked) {
         if (isApproved) {
-            existingNotice.innerHTML = `Your registration is <strong>approved</strong>! Hall Ticket available from ${unlockDateStr}.`;
+            existingNotice.innerHTML = isUnlocked
+                ? "Your registration is <strong>approved</strong>! Hall Ticket is now available."
+                : `Your registration is <strong>approved</strong>! Hall Ticket will be available on ${examConfiguration.getHallTicketUnlockDateDisplay()}.`;
         }
 
         if (admitCardBtn) {
@@ -1093,7 +1112,7 @@ function showDashboardView(student) {
             } else if (!isUnlocked) {
                 admitCardBtn.style.opacity = "0.5";
                 admitCardBtn.style.pointerEvents = "none";
-                admitCardBtn.title = `Hall Ticket will be available on ${unlockDateStr}`;
+                admitCardBtn.title = `Hall Ticket will be available on ${examConfiguration.getHallTicketUnlockDateDisplay()}`;
             } else {
                 admitCardBtn.style.opacity = "1";
                 admitCardBtn.style.pointerEvents = "auto";
@@ -1102,33 +1121,27 @@ function showDashboardView(student) {
         }
     }
 
-    // Fetch Hall Ticket availability from server API
-    fetch('/api/hall-ticket/status')
+    function refreshHallTicketStatus() {
+        fetch('/api/hall-ticket/status')
         .then(r => r.json())
         .then(data => {
             const isUnlocked = data.available === true;
-            const unlockDateStr = data.unlockDate || '20-08-2026 00:00 IST';
-            applyUnlockLogic(isUnlocked, unlockDateStr);
+            applyUnlockLogic(isUnlocked);
         })
         .catch(error => {
             console.error('Failed to fetch Hall Ticket status:', error);
             // Fallback: disable Hall Ticket button if we can't determine status
-            applyUnlockLogic(false, '20-08-2026 00:00 IST');
+            applyUnlockLogic(false);
         });
-
-    // Countdown calculations (Exam: 14 Feb 2027)
-    const examDate = new Date(2027, 1, 14);
-    const diffTime = examDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    const countDisplay = document.getElementById("countdownDays");
-    if (diffDays > 0) {
-        countDisplay.innerText = diffDays;
-    } else if (diffDays === 0) {
-        countDisplay.innerText = "TODAY";
-    } else {
-        countDisplay.innerText = "OVER";
     }
+
+    refreshHallTicketStatus();
+    if (hallTicketStatusTimer) clearInterval(hallTicketStatusTimer);
+    hallTicketStatusTimer = setInterval(refreshHallTicketStatus, 30000);
+
+    updateDashboardCountdown();
+    if (examCountdownTimer) clearInterval(examCountdownTimer);
+    examCountdownTimer = setInterval(updateDashboardCountdown, 60000);
 
     renderStudentResources();
     lucide.createIcons();

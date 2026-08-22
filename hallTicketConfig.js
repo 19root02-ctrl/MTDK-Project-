@@ -4,12 +4,16 @@
  * Centralized configuration for Hall Ticket unlock date/time
  * Uses Asia/Kolkata (IST) timezone for all comparisons
  * 
- * Unlock Date: 20 August 2026 at 12:00 AM IST
+ * Temporary trial configuration. Change only these two values for the actual exam.
  */
 
-// Default Hall Ticket unlock date/time configuration
-// Format: "20-08-2026 00:00 Asia/Kolkata"
-const DEFAULT_HALL_TICKET_UNLOCK_DATE = '20-08-2026 00:00 Asia/Kolkata';
+// ================================
+// EXAM CONFIGURATION
+// ================================
+const HALL_TICKET_UNLOCK_DATE = '2026-08-22T17:00:00+05:30';
+const EXAM_DATE = '2026-08-22T00:00:00+05:30';
+
+const DEFAULT_HALL_TICKET_UNLOCK_DATE = HALL_TICKET_UNLOCK_DATE;
 
 /**
  * Get the current Hall Ticket unlock date config
@@ -17,12 +21,12 @@ const DEFAULT_HALL_TICKET_UNLOCK_DATE = '20-08-2026 00:00 Asia/Kolkata';
  * @returns {string} The configured unlock date string
  */
 function getHallTicketUnlockDateConfig() {
-  return process.env.HALL_TICKET_UNLOCK_DATE || DEFAULT_HALL_TICKET_UNLOCK_DATE;
+  return process.env.HALL_TICKET_UNLOCK_DATE || HALL_TICKET_UNLOCK_DATE;
 }
 
 /**
  * Parse the Hall Ticket unlock date string into a Date object
- * Supports formats: "20-08-2026 00:00 Asia/Kolkata" or "20-08-2026"
+ * Supports ISO timestamps with an explicit timezone offset.
  * Returns a UTC Date object representing the unlock time in IST
  * 
  * @param {string} dateStr - Date string in format "DD-MM-YYYY HH:mm" or "DD-MM-YYYY"
@@ -32,29 +36,14 @@ function parseHallTicketUnlockDate(dateStr) {
   if (!dateStr) return null;
   
   try {
-    // Remove timezone suffix if present
-    const cleanStr = dateStr.replace(/\s*Asia\/Kolkata\s*$/i, '').trim();
-    
-    // Match DD-MM-YYYY HH:mm or DD-MM-YYYY
-    const match = cleanStr.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
-    if (!match) return null;
-    
-    const day = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10) - 1; // JS months are 0-indexed
-    const year = parseInt(match[3], 10);
-    const hours = match[4] ? parseInt(match[4], 10) : 0;
-    const minutes = match[5] ? parseInt(match[5], 10) : 0;
-    
-    // Create a date at 00:00 IST
-    // IST is UTC+5:30, so to get 00:00 IST we need to subtract 5:30 from UTC
-    // For example, 20-08-2026 00:00 IST = 19-08-2026 18:30 UTC
-    const istDate = new Date(year, month, day, hours, minutes, 0, 0);
-    
-    // Convert to UTC by adjusting for IST offset (UTC+5:30)
-    // IST is 5 hours 30 minutes ahead of UTC
-    const utcDate = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
-    
-    return utcDate;
+    const parsedDate = new Date(dateStr);
+    if (!Number.isNaN(parsedDate.getTime())) return parsedDate;
+
+    const legacyMatch = dateStr.replace(/\s*Asia\/Kolkata\s*$/i, '').trim()
+      .match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+    if (!legacyMatch) return null;
+
+    return new Date(`${legacyMatch[3]}-${legacyMatch[2]}-${legacyMatch[1]}T${legacyMatch[4] || '00'}:${legacyMatch[5] || '00'}:00+05:30`);
   } catch (e) {
     console.error('[HALL_TICKET] Failed to parse unlock date:', dateStr, e);
     return null;
@@ -85,28 +74,31 @@ function isHallTicketAvailable(dateStr = null) {
 
 /**
  * Get the formatted unlock date string for display
- * Format: "20-08-2026 00:00 IST"
+ * Format: "22 August 2026 at 05:00 PM"
  * 
  * @returns {string} Formatted unlock date string
  */
 function getHallTicketUnlockDateDisplay() {
-  const configDate = getHallTicketUnlockDateConfig();
-  const match = configDate.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
-  if (!match) return configDate;
-  
-  const day = match[1];
-  const month = match[2];
-  const year = match[3];
-  const hours = match[4] || '00';
-  const minutes = match[5] || '00';
-  
-  return `${day}-${month}-${year} ${hours}:${minutes} IST`;
+  const unlockDate = parseHallTicketUnlockDate(getHallTicketUnlockDateConfig());
+  if (!unlockDate) return getHallTicketUnlockDateConfig();
+
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(unlockDate).replace(',', ' at').replace(/\b(am|pm)\b/, match => match.toUpperCase());
 }
 
 // Export functions for both Node.js and browser environments
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DEFAULT_HALL_TICKET_UNLOCK_DATE,
+    HALL_TICKET_UNLOCK_DATE,
+    EXAM_DATE,
     parseHallTicketUnlockDate,
     isHallTicketAvailable,
     getHallTicketUnlockDateDisplay,
@@ -115,6 +107,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else if (typeof window !== 'undefined') {
   window.hallTicketConfig = {
     DEFAULT_HALL_TICKET_UNLOCK_DATE,
+    HALL_TICKET_UNLOCK_DATE,
+    EXAM_DATE,
     parseHallTicketUnlockDate,
     isHallTicketAvailable,
     getHallTicketUnlockDateDisplay,

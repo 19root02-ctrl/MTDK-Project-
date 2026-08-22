@@ -77,7 +77,7 @@ async function sendApprovalEmail(student) {
         Exam Date: <strong>14 February 2027</strong><br>
         Time: <strong>11:00 AM to 1:00 PM</strong><br>
         Exam Centre: <strong>MTDK School</strong><br>
-        Admit Card Available From: <strong>${process.env.HALL_TICKET_UNLOCK_DATE || '10 August 2026 13:00 IST'}</strong>
+        Admit Card Available From: <strong>${hallTicketConfig.getHallTicketUnlockDateDisplay()}</strong>
       </p>
       <p style="color:#475569;font-size:14px;">Your official registration PDF is attached to this email.</p>
       <div style="margin-top:20px;padding:14px;background:#fef9c3;border-left:4px solid #f59e0b;border-radius:4px;font-size:13px;color:#92400e;">
