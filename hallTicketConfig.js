@@ -10,7 +10,7 @@
 // ================================
 // EXAM CONFIGURATION
 // ================================
-const HALL_TICKET_UNLOCK_DATE = '2026-08-22T12:00:00+05:30';
+const HALL_TICKET_UNLOCK_DATE = '2026-08-22T12:30:00+05:30';
 const EXAM_DATE = '2026-08-22T00:00:00+05:30';
 
 const DEFAULT_HALL_TICKET_UNLOCK_DATE = HALL_TICKET_UNLOCK_DATE;
