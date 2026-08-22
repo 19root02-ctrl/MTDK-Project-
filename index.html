@@ -1209,7 +1209,7 @@
                         </div>
                         <div class="sidebar-menu">
                             <a href="#" class="sidebar-item active"><i data-lucide="layout-dashboard"></i> Dashboard Overview</a>
-                            <a href="#" class="sidebar-item" onclick="downloadHallTicket()"><i data-lucide="file-badge"></i> Download Admit Card</a>
+                            <a href="#" class="sidebar-item" onclick="downloadHallTicket(event); return false;"><i data-lucide="file-badge"></i> Download Admit Card</a>
                             <a href="#" class="sidebar-item" onclick="alert('Results will be declared on 15 March 2027.')"><i data-lucide="bar-chart-3"></i> View Exam Results</a>
                             <hr>
                             <a href="#" class="sidebar-item logout" onclick="handleDashboardLogout()"><i data-lucide="log-out"></i> Sign Out</a>

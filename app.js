@@ -1471,10 +1471,23 @@ function generateOfficialHallTicketHtml(student) {
 </html>`;
 }
 
-function downloadHallTicket(studentOverride = null) {
-    const student = studentOverride || activeStudentSession;
+function downloadHallTicket(eventOrStudent = null, studentOverride = null) {
+    const event = eventOrStudent && typeof eventOrStudent.preventDefault === "function"
+        ? eventOrStudent
+        : null;
+    if (event) event.preventDefault();
+
+    const student = event
+        ? studentOverride || activeStudentSession
+        : eventOrStudent || studentOverride || activeStudentSession;
     if (!student) {
         alert("Please login or select a student to download the Hall Ticket.");
+        return;
+    }
+
+    const hallTicketConfig = window.hallTicketConfig;
+    if (hallTicketConfig && !hallTicketConfig.isHallTicketAvailable(hallTicketConfig.HALL_TICKET_UNLOCK_DATE)) {
+        alert(`Hall Ticket will be available on ${hallTicketConfig.getHallTicketUnlockDateDisplay()}.`);
         return;
     }
 
