@@ -1059,7 +1059,7 @@ function createServer(options = {}) {
         return res.json({
           success: true,
           published: false,
-          message: 'Result has not been declared yet.',
+          message: 'Result is not published yet.',
           student: {
             regNo: candidate.reg_no || candidate.regNo,
             name: buildStudentFullName(candidate),
@@ -1075,7 +1075,7 @@ function createServer(options = {}) {
         return res.json({
           success: true,
           published: false,
-          message: 'Result has not been declared yet.',
+          message: 'Result is not published yet.',
           student: {
             regNo: candidate.reg_no || candidate.regNo,
             name: buildStudentFullName(candidate),

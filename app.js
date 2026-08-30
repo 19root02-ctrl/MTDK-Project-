@@ -1418,7 +1418,7 @@ async function fetchStudentResultForDashboard() {
         const response = await fetch(`${API_BASE_URL}/api/results/me?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`);
         const data = await response.json();
         if (!response.ok || !data || !data.success || !data.result) {
-            resultCard.innerHTML = '<div class="result-status-message">Result has not been declared yet.</div>';
+            resultCard.innerHTML = '<div class="result-status-message">Result is not published yet.</div>';
             resultCard.classList.remove('hidden');
             return;
         }
@@ -1446,7 +1446,7 @@ async function fetchStudentResultForDashboard() {
         lucide.createIcons();
     } catch (error) {
         console.warn('Could not load student result', error);
-        resultCard.innerHTML = '<div class="result-status-message">Result has not been declared yet.</div>';
+        resultCard.innerHTML = '<div class="result-status-message">Result is not published yet.</div>';
         resultCard.classList.remove('hidden');
     }
 }

@@ -464,6 +464,95 @@ test('GET /api/results/me only returns the authenticated student result', async 
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+
+test('GET /api/results/me opens only published results to the matched student', async () => {
+  const previousResults = global.__student_results;
+  global.__student_results = [
+    {
+      reg_no: 'IMTSE-10001',
+      student_name: 'UNPUBLISHED USER',
+      mathematics: 90,
+      english: 80,
+      science: 85,
+      total_marks: 255,
+      percentage: 85,
+      result_status: 'PASS',
+      status: 'DRAFT'
+    },
+    {
+      reg_no: 'IMTSE-10002',
+      student_name: 'PUBLISHED USER',
+      mathematics: 95,
+      english: 88,
+      science: 90,
+      total_marks: 273,
+      percentage: 91,
+      result_status: 'PASS',
+      status: 'PUBLISHED'
+    }
+  ];
+
+  const fakePool = createFakePool({
+    listStudents: [
+      {
+        reg_no: 'IMTSE-10001',
+        full_name: 'UNPUBLISHED USER',
+        student_class: 'VII',
+        medium: 'English',
+        school_name: 'TEST SCHOOL',
+        dob: '2014-08-15',
+        parent_name: 'TEST PARENT',
+        whatsapp: '1234567890',
+        email: 'test@example.com',
+        address: 'TEST ADDRESS',
+        amount: '\u20b9100.00',
+        pay_mode: 'UPI',
+        status: 'Approved',
+        reg_date: '2026-07-19'
+      },
+      {
+        reg_no: 'IMTSE-10002',
+        full_name: 'PUBLISHED USER',
+        student_class: 'VII',
+        medium: 'English',
+        school_name: 'TEST SCHOOL',
+        dob: '2014-08-14',
+        parent_name: 'OTHER PARENT',
+        whatsapp: '1111111111',
+        email: 'other@example.com',
+        address: 'OTHER ADDRESS',
+        amount: '\u20b9120.00',
+        pay_mode: 'Cash',
+        status: 'Approved',
+        reg_date: '2026-07-20'
+      }
+    ]
+  });
+
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise((resolve) => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const unpublished = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-10001&dob=2014-08-15`);
+    assert.equal(unpublished.status, 200);
+    const unpublishedPayload = await unpublished.json();
+    assert.equal(unpublishedPayload.published, false);
+    assert.equal(unpublishedPayload.result, null);
+
+    const published = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-10002&dob=2014-08-14`);
+    assert.equal(published.status, 200);
+    const publishedPayload = await published.json();
+    assert.equal(publishedPayload.published, true);
+    assert.equal(publishedPayload.result.regNo, 'IMTSE-10002');
+  } finally {
+    global.__student_results = previousResults;
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
 test('POST /api/students/:studentId/approve sends an approval email', async () => {
   const fakePool = createFakePool({
     selectStudent: {
