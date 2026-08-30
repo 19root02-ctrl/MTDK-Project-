@@ -777,30 +777,51 @@ function createServer(options = {}) {
 
   app.get('/api/results/template', async (_req, res) => {
     const students = await getAllStudents();
-    const firstStudent = (students || [])[0] || null;
-    const sampleRows = [{
-      'Registration No': 'IMTSE-10001',
-      'First Name': 'Rahul',
-      'Middle Name': 'Ramesh',
-      'Last Name': 'Shinde',
-      'School Name': firstStudent ? (firstStudent.school_name || firstStudent.schoolName || '') : 'ABC School',
-      'Phone': '9876543210',
-      'Email': 'rahul@example.com',
-      'Gender': '',
-      'Standard': 'VII',
-      'Medium': 'English',
-      'Payment Mode': 'Cash',
-      'Mathematics': '80',
-      'English': '75',
-      'Science': '90',
-      'Total': '245',
-      'Percentage': '81.67',
-      'Result Status': 'PASS'
+    const rows = (students || []).map(student => {
+      const fullName = String(buildStudentFullName(student) || '').trim();
+      const names = fullName ? fullName.split(/\s+/) : [];
+      const firstName = names[0] || '';
+      const middleName = names.slice(1, -1).join(' ');
+      const lastName = names.slice(-1)[0] || '';
+
+      return {
+        'Registration No': student.reg_no || student.regNo || '',
+        'First Name': firstName,
+        'Middle Name': middleName,
+        'Last Name': lastName,
+        'School Name': student.school_name || student.schoolName || '',
+        'Standard': student.student_class || student.class || '',
+        'Medium': student.medium || '',
+        'Payment Mode': student.pay_mode || student.payMode || '',
+        'Mathematics': '',
+        'English': '',
+        'Science': '',
+        'Total': '',
+        'Percentage': '',
+        'Result Status': ''
+      };
+    });
+
+    const csvPayload = rows.length > 0 ? rows : [{
+      'Registration No': '',
+      'First Name': '',
+      'Middle Name': '',
+      'Last Name': '',
+      'School Name': '',
+      'Standard': '',
+      'Medium': '',
+      'Payment Mode': '',
+      'Mathematics': '',
+      'English': '',
+      'Science': '',
+      'Total': '',
+      'Percentage': '',
+      'Result Status': ''
     }];
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="result_template.csv"');
-    res.send(toCsv(sampleRows));
+    res.send(toCsv(csvPayload));
   });
 
   app.get('/api/students/export', async (_req, res) => {
@@ -850,7 +871,7 @@ function createServer(options = {}) {
 
       for (let i = 0; i < rawResults.length; i += 1) {
         const row = rawResults[i] || {};
-        const regNo = String(row.registrationNo || row.regNo || '').trim();
+        const regNo = String(row.registrationNo || row.regNo || row['Registration No'] || '').trim();
         const uploadedSchoolName = String(row.schoolName || row['School Name'] || '').trim();
         const student = studentMap.get(regNo);
 

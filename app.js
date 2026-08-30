@@ -84,6 +84,7 @@ let dbStudents = [];
 let dbResources = [];
 let adminSession = false;
 let adminResultData = [];
+let resultPreviewData = [];
 const API_BASE_URL = window.location.origin;
 try {
     const savedStudents = localStorage.getItem("imtse_students");
@@ -1185,6 +1186,35 @@ async function loadResultSummary() {
     }
 }
 
+function renderResultPreview(rows = []) {
+    const previewWrapper = document.getElementById('resultPreviewWrapper');
+    const previewTable = document.getElementById('resultPreviewTable');
+    if (!previewWrapper || !previewTable) return;
+
+    resultPreviewData = Array.isArray(rows) ? rows : [];
+    if (!resultPreviewData.length) {
+        previewWrapper.classList.add('hidden');
+        previewTable.innerHTML = '';
+        return;
+    }
+
+    previewWrapper.classList.remove('hidden');
+    previewTable.innerHTML = resultPreviewData.map(result => `
+        <tr>
+            <td>${result.studentName || ''}</td>
+            <td>${result.regNo || ''}</td>
+            <td>${result.schoolName || ''}</td>
+            <td>${Number(result.mathematics ?? 0)}</td>
+            <td>${Number(result.english ?? 0)}</td>
+            <td>${Number(result.science ?? 0)}</td>
+            <td>${Number(result.totalMarks || 0)}</td>
+            <td>${Number(result.percentage || 0).toFixed(2)}%</td>
+            <td>${result.resultStatus || 'FAIL'}</td>
+            <td><span class="status-badge ${String(result.status || '').toLowerCase()}">${result.status || 'DRAFT'}</span></td>
+        </tr>
+    `).join('');
+}
+
 async function loadResultRows() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/results`);
@@ -1363,6 +1393,7 @@ async function handleResultExcelUpload(event) {
             const errorBox = document.getElementById('resultUploadErrors');
             errorBox.classList.add('hidden');
             errorBox.innerHTML = '';
+            renderResultPreview(data.results || []);
             await loadResultRows();
             await loadResultSummary();
             alert(`${data.validStudents} valid students uploaded. ${data.summary ? data.summary.pass : 0} passed, ${data.summary ? data.summary.fail : 0} failed.`);
