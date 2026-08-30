@@ -328,6 +328,21 @@ function buildStudentFullName(student) {
   return [first, middle, last].filter(Boolean).join(' ');
 }
 
+function normalizeHeaderKey(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/\uFEFF/g, '')
+    .replace(/[^a-z0-9]+/gi, '')
+    .toLowerCase();
+}
+
+function getRowValue(row = {}, aliases = []) {
+  const keys = aliases.map(alias => normalizeHeaderKey(alias));
+  const match = Object.entries(row || {}).find(([headerName]) => keys.includes(normalizeHeaderKey(headerName)));
+  if (!match) return '';
+  return String(match[1] ?? '').trim();
+}
+
 async function getAllStudents() {
   if (isDbConnected && connectionPool) {
     try {
@@ -871,8 +886,11 @@ function createServer(options = {}) {
 
       for (let i = 0; i < rawResults.length; i += 1) {
         const row = rawResults[i] || {};
-        const regNo = String(row.registrationNo || row.regNo || row['Registration No'] || '').trim();
-        const uploadedSchoolName = String(row.schoolName || row['School Name'] || '').trim();
+        const hasAnyData = Object.values(row).some(value => String(value ?? '').trim() !== '');
+        if (!hasAnyData) continue;
+
+        const regNo = getRowValue(row, ['registrationNo', 'regNo', 'reg_no', 'Registration No', 'Registration Number', 'Reg No', 'Reg. No']).trim();
+        const uploadedSchoolName = String(getRowValue(row, ['schoolName', 'School Name']) || '').trim();
         const student = studentMap.get(regNo);
 
         if (!regNo) {

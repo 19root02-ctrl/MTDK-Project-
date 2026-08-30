@@ -465,6 +465,82 @@ test('GET /api/results/me only returns the authenticated student result', async 
   }
 });
 
+test('Result template and upload normalize Registration No headers and ignore blank rows', async () => {
+  const fakePool = createFakePool({
+    listStudents: [
+      {
+        reg_no: 'IMTSE-34990',
+        full_name: 'SAIRAJ KULKARNI',
+        student_class: 'VII',
+        medium: 'English',
+        school_name: 'ABC School',
+        dob: '2014-08-15',
+        parent_name: 'TEST PARENT',
+        whatsapp: '1111111111',
+        email: 'sairaj@example.com',
+        address: 'TEST ADDRESS',
+        amount: '\u20b9500.00',
+        pay_mode: 'UPI',
+        status: 'Approved',
+        reg_date: '2026-07-19'
+      },
+      {
+        reg_no: 'IMTSE-34991',
+        full_name: 'RUPA SHARMA',
+        student_class: 'VIII',
+        medium: 'English',
+        school_name: 'XYZ School',
+        dob: '2013-09-14',
+        parent_name: 'OTHER PARENT',
+        whatsapp: '2222222222',
+        email: 'rupa@example.com',
+        address: 'OTHER ADDRESS',
+        amount: '\u20b9500.00',
+        pay_mode: 'Cash',
+        status: 'Approved',
+        reg_date: '2026-07-20'
+      }
+    ]
+  });
+
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise((resolve) => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const templateRes = await fetch(`http://127.0.0.1:${port}/api/results/template`);
+    assert.equal(templateRes.status, 200);
+    const templateCsv = await templateRes.text();
+    assert.match(templateCsv, /Registration No/i);
+    assert.match(templateCsv, /IMTSE-34990/i);
+    assert.doesNotMatch(templateCsv, /Gender/i);
+
+    const uploadRes = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        results: [
+          { 'Reg. No': 'IMTSE-34990', 'Mathematics': '80', 'English': '85', 'Science': '90', 'School Name': 'ABC School' },
+          { 'Registration Number': 'IMTSE-34991', 'Mathematics': '70', 'English': '72', 'Science': '74', 'School Name': 'XYZ School' },
+          { 'Registration No': '', 'Mathematics': '', 'English': '', 'Science': '', 'School Name': '' },
+          { 'Reg No': 'IMTSE-99999', 'Mathematics': '90', 'English': '90', 'Science': '90', 'School Name': 'ABC School' }
+        ]
+      })
+    });
+
+    assert.equal(uploadRes.status, 400, 'an invalid registration should fail the upload, but blank trailing rows must not trigger the required-number error');
+    const payload = await uploadRes.json();
+    assert.equal(payload.validStudents, 0);
+    assert.equal(payload.errors.length, 1);
+    assert.match(payload.errors[0].message, /Registration number not found/i);
+    assert.ok(!payload.errors.some(error => /Registration number is required/i.test(error.message || '')));
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
 test('GET /api/results/me opens only published results to the matched student', async () => {
   const previousResults = global.__student_results;
   global.__student_results = [

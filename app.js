@@ -1327,6 +1327,78 @@ function adminDownloadRegisteredStudentsExcel() {
         });
 }
 
+function normalizeCsvHeaderName(value = '') {
+    return String(value)
+        .trim()
+        .toLowerCase()
+        .replace(/\uFEFF/g, '')
+        .replace(/[^a-z0-9]+/g, '')
+        .replace(/^regno$/, 'regno');
+}
+
+function parseCsvLine(line = '') {
+    const cells = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+        const char = line[i];
+        const nextChar = line[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+                current += '"';
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (char === ',' && !inQuotes) {
+            cells.push(current);
+            current = '';
+            continue;
+        }
+
+        if ((char === '\n' || char === '\r') && !inQuotes) {
+            continue;
+        }
+
+        current += char;
+    }
+
+    cells.push(current);
+    return cells.map(value => value.trim().replace(/^"|"$/g, ''));
+}
+
+function readCsvFileRows(text = '') {
+    const rawLines = String(text || '').split(/\r?\n/);
+    const lines = rawLines
+        .map(line => line.trimEnd())
+        .filter(line => line !== '');
+
+    if (!lines.length) return [];
+
+    const parsedLines = lines.map(parseCsvLine);
+    const maxColumns = Math.max(...parsedLines.map(line => line.length));
+
+    return parsedLines.map(line => {
+        const padded = [...line];
+        while (padded.length < maxColumns) padded.push('');
+        return padded;
+    });
+}
+
+function getValueByNormalizedHeader(row = {}, keys = []) {
+    const normalizedKeyList = keys.map(key => normalizeCsvHeaderName(key));
+    const foundEntry = Object.entries(row || {}).find(([headerName]) => {
+        const normalized = normalizeCsvHeaderName(headerName);
+        return normalizedKeyList.includes(normalized);
+    });
+    return foundEntry ? String(foundEntry[1] ?? '').trim() : '';
+}
+
 function adminDownloadResultTemplate() {
     fetch(`${API_BASE_URL}/api/results/template`)
         .then(async response => {
@@ -1355,25 +1427,27 @@ async function handleResultExcelUpload(event) {
     reader.onload = async () => {
         try {
             const text = String(reader.result || '');
-            const rows = text.split(/\r?\n/).filter(Boolean);
+            const rows = readCsvFileRows(text);
             if (!rows.length) throw new Error('The uploaded file is empty.');
 
-            const headers = rows[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const headers = rows[0].map(h => String(h || '').trim().replace(/^\uFEFF/, ''));
+            const normalizedHeaders = headers.map(h => normalizeCsvHeaderName(h));
             const resultRows = rows.slice(1).map(line => {
-                const values = line.split(',');
                 const obj = {};
                 headers.forEach((header, index) => {
-                    obj[header] = (values[index] || '').replace(/"/g, '').trim();
+                    obj[header] = String(line[index] || '').trim();
                 });
                 return obj;
-            }).filter(row => Object.values(row).some(value => value !== ''));
+            }).filter(row => Object.values(row).some(value => String(value || '').trim() !== ''));
 
             const payload = {
                 results: resultRows.map(row => ({
-                    registrationNo: row['Registration No'] || row['Registration Number'] || '',
-                    mathematics: Number(row['Mathematics'] || row['Maths'] || 0),
-                    english: Number(row['English'] || 0),
-                    science: Number(row['Science'] || 0)
+                    registrationNo: getValueByNormalizedHeader(row, ['Registration No', 'Registration Number', 'Reg No', 'Reg. No', 'reg_no', 'registrationno', 'regno']) ||
+                        getValueByNormalizedHeader(row, ['Registration No', 'Registration Number', 'Reg No', 'Reg. No', 'reg_no', 'registrationno', 'regno']),
+                    mathematics: Number(getValueByNormalizedHeader(row, ['Mathematics', 'Maths']) || 0),
+                    english: Number(getValueByNormalizedHeader(row, ['English']) || 0),
+                    science: Number(getValueByNormalizedHeader(row, ['Science']) || 0),
+                    schoolName: getValueByNormalizedHeader(row, ['School Name', 'schoolname']) || ''
                 }))
             };
 
