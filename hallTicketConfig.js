@@ -34,16 +34,30 @@ function getHallTicketUnlockDateConfig() {
  */
 function parseHallTicketUnlockDate(dateStr) {
   if (!dateStr) return null;
-  
+
   try {
-    const parsedDate = new Date(dateStr);
+    const trimmed = String(dateStr).trim();
+    const parsedDate = new Date(trimmed);
     if (!Number.isNaN(parsedDate.getTime())) return parsedDate;
 
-    const legacyMatch = dateStr.replace(/\s*Asia\/Kolkata\s*$/i, '').trim()
-      .match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
-    if (!legacyMatch) return null;
+    const normalized = trimmed
+      .replace(/\s*Asia\/Kolkata\s*$/i, '')
+      .replace(/\s*IST\s*$/i, '')
+      .trim();
 
-    return new Date(`${legacyMatch[3]}-${legacyMatch[2]}-${legacyMatch[1]}T${legacyMatch[4] || '00'}:${legacyMatch[5] || '00'}:00+05:30`);
+    const directMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(\d{2}):(\d{2}))?$/);
+    if (directMatch) {
+      const [, year, month, day, hour = '00', minute = '00'] = directMatch;
+      return new Date(`${year}-${month}-${day}T${hour}:${minute}:00+05:30`);
+    }
+
+    const dayMonthMatch = normalized.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+    if (dayMonthMatch) {
+      const [, day, month, year, hour = '00', minute = '00'] = dayMonthMatch;
+      return new Date(`${year}-${month}-${day}T${hour}:${minute}:00+05:30`);
+    }
+
+    return null;
   } catch (e) {
     console.error('[HALL_TICKET] Failed to parse unlock date:', dateStr, e);
     return null;
@@ -82,15 +96,16 @@ function getHallTicketUnlockDateDisplay() {
   const unlockDate = parseHallTicketUnlockDate(getHallTicketUnlockDateConfig());
   if (!unlockDate) return getHallTicketUnlockDateConfig();
 
-  return new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }).format(unlockDate).replace(',', ' at').replace(/\b(am|pm)\b/, match => match.toUpperCase());
+  const day = String(unlockDate.getDate()).padStart(2, '0');
+  const month = String(unlockDate.getMonth() + 1).padStart(2, '0');
+  const year = unlockDate.getFullYear();
+  const hours = unlockDate.getHours();
+  const minutes = unlockDate.getMinutes();
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHour = hours % 12 || 12;
+  const displayMinutes = String(minutes).padStart(2, '0');
+
+  return `${day}-${month}-${year} at ${displayHour}:${displayMinutes} ${period}`;
 }
 
 // Export functions for both Node.js and browser environments

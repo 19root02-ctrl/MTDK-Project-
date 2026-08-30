@@ -59,6 +59,9 @@ function createFakePool(customHandlers = {}) {
       }
 
       if (/SELECT\s+\*\s+FROM\s+students\s+ORDER\s+BY\s+created_at\s+DESC/i.test(normalizedSql)) {
+        if (customHandlers.listStudents) {
+          return { rows: customHandlers.listStudents };
+        }
         return { rows: [{
           reg_no: 'IMTSE-10001',
           full_name: 'TEST USER',
@@ -250,7 +253,217 @@ test('PUT /api/students/:studentId updates the student record in the database', 
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+test('POST /api/results/upload validates and calculates results for valid marks', async () => {
+  const fakePool = createFakePool({
+    selectStudent: {
+      reg_no: 'IMTSE-10001',
+      full_name: 'TEST USER',
+      student_class: 'VII',
+      medium: 'English',
+      school_name: 'TEST SCHOOL',
+      dob: '2014-08-15',
+      parent_name: 'TEST PARENT',
+      whatsapp: '1234567890',
+      email: 'test@example.com',
+      address: 'TEST ADDRESS',
+      amount: '\u20b9100.00',
+      pay_mode: 'UPI',
+      status: 'Approved',
+      reg_date: '2026-07-19'
+    }
+  });
 
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise((resolve) => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        results: [{
+          registrationNo: 'IMTSE-10001',
+          schoolName: 'TEST SCHOOL',
+          mathematics: 80,
+          english: 75,
+          science: 90
+        }]
+      })
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.validStudents, 1);
+    assert.equal(payload.summary.total, 245);
+    assert.equal(payload.results[0].resultStatus, 'PASS');
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('POST /api/results/upload rejects a mismatched school name and keeps multi-school support', async () => {
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-10001',
+      full_name: 'TEST USER',
+      student_class: 'VII',
+      medium: 'English',
+      school_name: 'ABC School',
+      dob: '2014-08-15',
+      parent_name: 'TEST PARENT',
+      whatsapp: '1234567890',
+      email: 'test@example.com',
+      address: 'TEST ADDRESS',
+      amount: '\u20b9100.00',
+      pay_mode: 'UPI',
+      status: 'Approved',
+      reg_date: '2026-07-19'
+    }, {
+      reg_no: 'IMTSE-10002',
+      full_name: 'ANOTHER USER',
+      student_class: 'VI',
+      medium: 'Marathi',
+      school_name: 'XYZ School',
+      dob: '2013-09-14',
+      parent_name: 'OTHER PARENT',
+      whatsapp: '9876543210',
+      email: 'other@example.com',
+      address: 'OTHER ADDRESS',
+      amount: '\u20b9100.00',
+      pay_mode: 'Cash',
+      status: 'Approved',
+      reg_date: '2026-07-20'
+    }]
+  });
+
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise((resolve) => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        results: [{
+          registrationNo: 'IMTSE-10001',
+          schoolName: 'XYZ School',
+          mathematics: 80,
+          english: 75,
+          science: 90
+        }]
+      })
+    });
+
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.match(payload.errors[0].message, /School Name does not match the registered student/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('GET /api/students/export and /api/results/template include the school name for multi-school data', async () => {
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-10001',
+      full_name: 'RAHUL PATIL',
+      student_class: 'V',
+      medium: 'English',
+      school_name: 'ABC School',
+      dob: '2014-08-15',
+      parent_name: 'RAMESH PATIL',
+      whatsapp: '1234567890',
+      email: 'rahul@example.com',
+      address: 'Address 1',
+      amount: '₹500.00',
+      pay_mode: 'Cash',
+      status: 'Approved',
+      reg_date: '2026-07-19'
+    }, {
+      reg_no: 'IMTSE-10002',
+      full_name: 'PRIYA SHAH',
+      student_class: 'VI',
+      medium: 'English',
+      school_name: 'XYZ School',
+      dob: '2013-09-14',
+      parent_name: 'KIRAN SHAH',
+      whatsapp: '9876543210',
+      email: 'priya@example.com',
+      address: 'Address 2',
+      amount: '₹500.00',
+      pay_mode: 'UPI',
+      status: 'Approved',
+      reg_date: '2026-07-20'
+    }]
+  });
+
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise((resolve) => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const studentsRes = await fetch(`http://127.0.0.1:${port}/api/students/export`);
+    assert.equal(studentsRes.status, 200);
+    const studentsCsv = await studentsRes.text();
+    assert.match(studentsCsv, /School Name/i);
+    assert.match(studentsCsv, /ABC School/i);
+
+    const templateRes = await fetch(`http://127.0.0.1:${port}/api/results/template`);
+    assert.equal(templateRes.status, 200);
+    const templateCsv = await templateRes.text();
+    assert.match(templateCsv, /School Name/i);
+    assert.match(templateCsv, /ABC School/i);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('GET /api/results/me only returns the authenticated student result', async () => {
+  const fakePool = createFakePool({
+    selectStudent: {
+      reg_no: 'IMTSE-10001',
+      full_name: 'TEST USER',
+      student_class: 'VII',
+      medium: 'English',
+      school_name: 'TEST SCHOOL',
+      dob: '2014-08-15',
+      parent_name: 'TEST PARENT',
+      whatsapp: '1234567890',
+      email: 'test@example.com',
+      address: 'TEST ADDRESS',
+      amount: '\u20b9100.00',
+      pay_mode: 'UPI',
+      status: 'Approved',
+      reg_date: '2026-07-19'
+    }
+  });
+
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise((resolve) => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-10001&dob=2014-08-15`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.student.regNo, 'IMTSE-10001');
+
+    const forbidden = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-99999&dob=2014-08-15`);
+    assert.equal(forbidden.status, 403);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
 test('POST /api/students/:studentId/approve sends an approval email', async () => {
   const fakePool = createFakePool({
     selectStudent: {
@@ -306,9 +519,12 @@ test('POST /api/students/:studentId/approve sends an approval email', async () =
 // ═══════════════════════════════════════════════════════════════════
 
 test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', async () => {
-  // Test with date in the future (before unlock)
-  process.env.HALL_TICKET_UNLOCK_DATE = '25-12-2026 00:00 Asia/Kolkata';
-  
+  const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const futureDay = String(futureDate.getDate()).padStart(2, '0');
+  const futureMonth = String(futureDate.getMonth() + 1).padStart(2, '0');
+  const futureYear = futureDate.getFullYear();
+  process.env.HALL_TICKET_UNLOCK_DATE = `${futureDay}-${futureMonth}-${futureYear} 00:00 Asia/Kolkata`;
+
   const fakePool = createFakePool();
   const app = createServer({ pool: fakePool });
   const server = await new Promise((resolve) => {
@@ -317,8 +533,7 @@ test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', asy
 
   try {
     const port = server.address().port;
-    const url = 'http://127.0.0.1:' + port + '/api/hall-ticket/status';
-    const response = await fetch(url);
+    const response = await fetch(`http://127.0.0.1:${port}/api/hall-ticket/status`);
 
     assert.equal(response.status, 403);
     const payload = await response.json();
@@ -332,9 +547,12 @@ test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', asy
 });
 
 test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date', async () => {
-  // Test with date in the past (already unlocked)
-  process.env.HALL_TICKET_UNLOCK_DATE = '15-08-2026 00:00 Asia/Kolkata';
-  
+  const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const pastDay = String(pastDate.getDate()).padStart(2, '0');
+  const pastMonth = String(pastDate.getMonth() + 1).padStart(2, '0');
+  const pastYear = pastDate.getFullYear();
+  process.env.HALL_TICKET_UNLOCK_DATE = `${pastDay}-${pastMonth}-${pastYear} 00:00 Asia/Kolkata`;
+
   const fakePool = createFakePool();
   const app = createServer({ pool: fakePool });
   const server = await new Promise((resolve) => {
@@ -343,8 +561,7 @@ test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date'
 
   try {
     const port = server.address().port;
-    const url = 'http://127.0.0.1:' + port + '/api/hall-ticket/status';
-    const response = await fetch(url);
+    const response = await fetch(`http://127.0.0.1:${port}/api/hall-ticket/status`);
 
     assert.equal(response.status, 200);
     const payload = await response.json();
@@ -358,9 +575,12 @@ test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date'
 });
 
 test('Hall Ticket availability uses Asia/Kolkata (IST) timezone', async () => {
-  // Current date is 18-08-2026, so 20-08-2026 is in the future and should be locked
-  process.env.HALL_TICKET_UNLOCK_DATE = '20-08-2026 00:00 Asia/Kolkata';
-  
+  const futureDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  const futureDay = String(futureDate.getDate()).padStart(2, '0');
+  const futureMonth = String(futureDate.getMonth() + 1).padStart(2, '0');
+  const futureYear = futureDate.getFullYear();
+  process.env.HALL_TICKET_UNLOCK_DATE = `${futureDay}-${futureMonth}-${futureYear} 00:00 Asia/Kolkata`;
+
   const fakePool = createFakePool();
   const app = createServer({ pool: fakePool });
   const server = await new Promise((resolve) => {
@@ -369,10 +589,8 @@ test('Hall Ticket availability uses Asia/Kolkata (IST) timezone', async () => {
 
   try {
     const port = server.address().port;
-    const url = 'http://127.0.0.1:' + port + '/api/hall-ticket/status';
-    const response = await fetch(url);
-    
-    // Since current date is 18-08-2026, it should be locked
+    const response = await fetch(`http://127.0.0.1:${port}/api/hall-ticket/status`);
+
     assert.equal(response.status, 403);
     const payload = await response.json();
     assert.equal(payload.available, false);
@@ -383,8 +601,12 @@ test('Hall Ticket availability uses Asia/Kolkata (IST) timezone', async () => {
 });
 
 test('Hall Ticket API returns correct unlock date in response', async () => {
-  process.env.HALL_TICKET_UNLOCK_DATE = '20-08-2026 00:00 Asia/Kolkata';
-  
+  const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const futureDay = String(futureDate.getDate()).padStart(2, '0');
+  const futureMonth = String(futureDate.getMonth() + 1).padStart(2, '0');
+  const futureYear = futureDate.getFullYear();
+  process.env.HALL_TICKET_UNLOCK_DATE = `${futureDay}-${futureMonth}-${futureYear} 00:00 Asia/Kolkata`;
+
   const fakePool = createFakePool();
   const app = createServer({ pool: fakePool });
   const server = await new Promise((resolve) => {
@@ -393,12 +615,11 @@ test('Hall Ticket API returns correct unlock date in response', async () => {
 
   try {
     const port = server.address().port;
-    const url = 'http://127.0.0.1:' + port + '/api/hall-ticket/status';
-    const response = await fetch(url);
+    const response = await fetch(`http://127.0.0.1:${port}/api/hall-ticket/status`);
     const payload = await response.json();
-    
+
     assert(payload.unlockDate);
-    assert.match(payload.unlockDate, /20-08-2026/);
+    assert.match(payload.unlockDate, new RegExp(`${futureDay}-${futureMonth}-${futureYear}`));
   } finally {
     delete process.env.HALL_TICKET_UNLOCK_DATE;
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));

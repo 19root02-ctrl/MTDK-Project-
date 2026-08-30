@@ -13,6 +13,15 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 // In-memory fallbacks
 if (!global.__students) global.__students = [];
 if (!global.__resources) global.__resources = [];
+if (!global.__student_results) global.__student_results = [];
+
+const RESULT_SUBJECTS = [
+  { key: 'mathematics', label: 'Mathematics', maxMarks: 100, minPass: 35 },
+  { key: 'english', label: 'English', maxMarks: 100, minPass: 35 },
+  { key: 'science', label: 'Science', maxMarks: 100, minPass: 35 }
+];
+
+const MAX_RESULT_TOTAL = 300;
 
 let connectionPool = null;
 let isDbConnected = false;
@@ -231,6 +240,244 @@ function formatDateWithDay(value) {
   return parsed.toLocaleDateString('en-IN', options);
 }
 
+function toNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getResultMarksFromInput(rawMarks = {}) {
+  const marks = {};
+  RESULT_SUBJECTS.forEach(subject => {
+    const directValue = rawMarks[subject.key] ?? rawMarks[subject.label] ?? rawMarks[subject.label.toLowerCase()] ?? rawMarks[subject.key.toUpperCase()];
+    const parsed = toNumber(directValue);
+    marks[subject.key] = parsed !== null && parsed >= 0 && parsed <= 100 ? parsed : null;
+  });
+  return marks;
+}
+
+function calculateResultSummary(rawMarks = {}) {
+  const marks = getResultMarksFromInput(rawMarks);
+  const mathematics = marks.mathematics;
+  const english = marks.english;
+  const science = marks.science;
+  const totalMarks = (mathematics ?? 0) + (english ?? 0) + (science ?? 0);
+  const percentage = totalMarks === 0 ? 0 : Number(((totalMarks / MAX_RESULT_TOTAL) * 100).toFixed(2));
+  const resultStatus = mathematics !== null && english !== null && science !== null && mathematics >= 35 && english >= 35 && science >= 35 ? 'PASS' : 'FAIL';
+
+  return {
+    mathematics,
+    english,
+    science,
+    totalMarks,
+    percentage,
+    resultStatus
+  };
+}
+
+function serializeResultRecord(row) {
+  if (!row) return null;
+  const subjectMarks = {
+    mathematics: toNumber(row.mathematics),
+    english: toNumber(row.english),
+    science: toNumber(row.science)
+  };
+  const summary = calculateResultSummary(subjectMarks);
+  const status = String(row.status || 'DRAFT').toUpperCase();
+  const resultStatus = String(row.result_status || summary.resultStatus || 'FAIL').toUpperCase();
+
+  return {
+    id: row.id,
+    regNo: row.reg_no || row.regNo,
+    studentName: row.student_name || row.studentName || '',
+    mathematics: subjectMarks.mathematics,
+    english: subjectMarks.english,
+    science: subjectMarks.science,
+    totalMarks: Number(row.total_marks ?? summary.totalMarks ?? 0),
+    percentage: Number(row.percentage ?? summary.percentage ?? 0),
+    resultStatus: resultStatus,
+    status,
+    verifiedAt: row.verified_at || null,
+    publishedAt: row.published_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null
+  };
+}
+
+function escapeCsvValue(value) {
+  const str = value === null || value === undefined ? '' : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function toCsv(rows) {
+  if (!rows || rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(',')];
+  rows.forEach(row => {
+    lines.push(headers.map(header => escapeCsvValue(row[header])).join(','));
+  });
+  return lines.join('\n');
+}
+
+function buildStudentFullName(student) {
+  const directName = student.full_name || student.fullName || student.name || '';
+  if (directName) return directName;
+  const first = student.first_name || student.firstName || '';
+  const middle = student.middle_name || student.middleName || '';
+  const last = student.last_name || student.lastName || '';
+  return [first, middle, last].filter(Boolean).join(' ');
+}
+
+async function getAllStudents() {
+  if (isDbConnected && connectionPool) {
+    try {
+      const result = await connectionPool.query('SELECT * FROM students ORDER BY created_at DESC');
+      return getQueryRows(result);
+    } catch (e) {
+      console.error('Failed to fetch students for result operations:', e);
+    }
+  }
+  return global.__students || [];
+}
+
+async function getAllResults() {
+  if (isDbConnected && connectionPool) {
+    try {
+      const result = await connectionPool.query('SELECT * FROM student_results ORDER BY created_at DESC');
+      return getQueryRows(result).map(row => serializeResultRecord(row));
+    } catch (e) {
+      console.error('Failed to fetch results from PostgreSQL DB:', e);
+    }
+  }
+  return (global.__student_results || []).map(row => serializeResultRecord(row));
+}
+
+async function getResultByRegNo(regNo) {
+  const target = String(regNo || '').trim();
+  if (!target) return null;
+
+  if (isDbConnected && connectionPool) {
+    try {
+      const result = await connectionPool.query('SELECT * FROM student_results WHERE reg_no = $1 LIMIT 1', [target]);
+      const rows = getQueryRows(result);
+      if (rows && rows.length > 0) return serializeResultRecord(rows[0]);
+    } catch (e) {
+      console.error('Failed to fetch result by registration number:', e);
+    }
+  }
+
+  const match = (global.__student_results || []).find(item => String(item.reg_no || item.regNo || '').trim() === target);
+  return match ? serializeResultRecord(match) : null;
+}
+
+async function createOrUpdateResultRecord(resultPayload) {
+  if (isDbConnected && connectionPool) {
+    try {
+      const values = [
+        resultPayload.regNo,
+        resultPayload.studentName || '',
+        Number(resultPayload.mathematics ?? 0),
+        Number(resultPayload.english ?? 0),
+        Number(resultPayload.science ?? 0),
+        Number(resultPayload.totalMarks ?? 0),
+        Number(resultPayload.percentage ?? 0),
+        String(resultPayload.resultStatus || 'FAIL').toUpperCase(),
+        String(resultPayload.status || 'DRAFT').toUpperCase()
+      ];
+
+      await connectionPool.query(`
+        INSERT INTO student_results (reg_no, student_name, mathematics, english, science, total_marks, percentage, result_status, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (reg_no)
+        DO UPDATE SET student_name = EXCLUDED.student_name,
+                      mathematics = EXCLUDED.mathematics,
+                      english = EXCLUDED.english,
+                      science = EXCLUDED.science,
+                      total_marks = EXCLUDED.total_marks,
+                      percentage = EXCLUDED.percentage,
+                      result_status = EXCLUDED.result_status,
+                      status = EXCLUDED.status,
+                      updated_at = CURRENT_TIMESTAMP
+      `, values);
+    } catch (e) {
+      console.error('Failed to upsert result in PostgreSQL DB:', e);
+    }
+  }
+
+  const existingIndex = (global.__student_results || []).findIndex(item => String(item.reg_no || item.regNo || '').trim() === String(resultPayload.regNo || '').trim());
+  const record = {
+    reg_no: resultPayload.regNo,
+    regNo: resultPayload.regNo,
+    student_name: resultPayload.studentName || '',
+    studentName: resultPayload.studentName || '',
+    mathematics: Number(resultPayload.mathematics ?? 0),
+    english: Number(resultPayload.english ?? 0),
+    science: Number(resultPayload.science ?? 0),
+    total_marks: Number(resultPayload.totalMarks ?? 0),
+    percentage: Number(resultPayload.percentage ?? 0),
+    result_status: String(resultPayload.resultStatus || 'FAIL').toUpperCase(),
+    status: String(resultPayload.status || 'DRAFT').toUpperCase(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  if (existingIndex >= 0) {
+    global.__student_results[existingIndex] = record;
+  } else {
+    global.__student_results.push(record);
+  }
+
+  return serializeResultRecord(record);
+}
+
+async function updateResultStatusById(resultId, nextStatus) {
+  const targetId = Number(resultId);
+
+  if (isDbConnected && connectionPool) {
+    try {
+      await connectionPool.query(
+        'UPDATE student_results SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [String(nextStatus).toUpperCase(), targetId]
+      );
+    } catch (e) {
+      console.error('Failed to update result status in PostgreSQL DB:', e);
+    }
+  }
+
+  const list = global.__student_results || [];
+  const index = list.findIndex(item => Number(item.id || 0) === targetId);
+  if (index >= 0) {
+    list[index].status = String(nextStatus).toUpperCase();
+    list[index].updated_at = new Date().toISOString();
+  }
+
+  return true;
+}
+
+async function updateResultStatusByRegNo(regNo, nextStatus) {
+  const target = String(regNo || '').trim();
+
+  if (isDbConnected && connectionPool) {
+    try {
+      await connectionPool.query(
+        'UPDATE student_results SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE reg_no = $2',
+        [String(nextStatus).toUpperCase(), target]
+      );
+    } catch (e) {
+      console.error('Failed to update result status by registration number in PostgreSQL DB:', e);
+    }
+  }
+
+  const list = global.__student_results || [];
+  const index = list.findIndex(item => String(item.reg_no || item.regNo || '').trim() === target);
+  if (index >= 0) {
+    list[index].status = String(nextStatus).toUpperCase();
+    list[index].updated_at = new Date().toISOString();
+  }
+
+  return true;
+}
+
 async function generateRegistrationPdfBuffer(student) {
   return new Promise((resolve, reject) => {
     try {
@@ -410,6 +657,23 @@ async function tryInitDatabase(providedPool = null) {
     `);
 
     await connectionPool.query(`
+      CREATE TABLE IF NOT EXISTS student_results (
+        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        reg_no VARCHAR(50) NOT NULL UNIQUE,
+        student_name VARCHAR(255) NOT NULL,
+        mathematics INTEGER NULL,
+        english INTEGER NULL,
+        science INTEGER NULL,
+        total_marks INTEGER NOT NULL DEFAULT 0,
+        percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
+        result_status VARCHAR(20) NOT NULL DEFAULT 'FAIL',
+        status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await connectionPool.query(`
       INSERT INTO admin_users (username, password)
       VALUES ('admin', 'admin')
       ON CONFLICT (username) DO UPDATE SET password = EXCLUDED.password;
@@ -487,6 +751,349 @@ function createServer(options = {}) {
   });
 
   const allowInMemoryFallback = process.env.ALLOW_IN_MEMORY_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
+
+  app.get('/api/results/summary', async (_req, res) => {
+    try {
+      const students = await getAllStudents();
+      const results = await getAllResults();
+      const totalRegistered = (students || []).length;
+      const resultsUploaded = (results || []).length;
+      const resultsVerified = (results || []).filter(r => String(r.status || '').toUpperCase() === 'VERIFIED').length;
+      const resultsPublished = (results || []).filter(r => String(r.status || '').toUpperCase() === 'PUBLISHED').length;
+      const errorsPending = (results || []).filter(r => String(r.status || '').toUpperCase() === 'DRAFT').length;
+
+      res.json({
+        totalRegistered,
+        resultsUploaded,
+        resultsVerified,
+        resultsPublished,
+        errorsPending,
+        success: true
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to calculate result summary', details: error.message || String(error) });
+    }
+  });
+
+  app.get('/api/results/template', async (_req, res) => {
+    const students = await getAllStudents();
+    const firstStudent = (students || [])[0] || null;
+    const sampleRows = [{
+      'Registration No': 'IMTSE-10001',
+      'First Name': 'Rahul',
+      'Middle Name': 'Ramesh',
+      'Last Name': 'Shinde',
+      'School Name': firstStudent ? (firstStudent.school_name || firstStudent.schoolName || '') : 'ABC School',
+      'Phone': '9876543210',
+      'Email': 'rahul@example.com',
+      'Gender': '',
+      'Standard': 'VII',
+      'Medium': 'English',
+      'Payment Mode': 'Cash',
+      'Mathematics': '80',
+      'English': '75',
+      'Science': '90',
+      'Total': '245',
+      'Percentage': '81.67',
+      'Result Status': 'PASS'
+    }];
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="result_template.csv"');
+    res.send(toCsv(sampleRows));
+  });
+
+  app.get('/api/students/export', async (_req, res) => {
+    try {
+      const students = await getAllStudents();
+      const rows = (students || []).map(student => {
+        const fullName = String(buildStudentFullName(student) || '').trim();
+        const names = fullName.split(/\s+/);
+        const firstName = names[0] || '';
+        const middleName = names.slice(1, -1).join(' ');
+        const lastName = names.slice(-1)[0] || '';
+        const mode = String(student.pay_mode || student.payMode || '').trim();
+        const screenshot = /online|upi/i.test(mode) && (student.payment_screenshot_data || student.paymentScreenshotData) ? 'View Screenshot' : 'Not Required';
+
+        return {
+          'Registration No': student.reg_no || student.regNo || '',
+          'First Name': firstName,
+          'Middle Name': middleName,
+          'Last Name': lastName,
+          'School Name': student.school_name || student.schoolName || '',
+          'Phone': student.whatsapp || '',
+          'Email': student.email || '',
+          'Gender': '',
+          'Standard': student.student_class || student.class || '',
+          'Medium': student.medium || '',
+          'Payment Mode': mode,
+          'Payment Screenshot': screenshot
+        };
+      });
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="registered_students.csv"');
+      res.send(toCsv(rows));
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to export registered students', details: error.message || String(error) });
+    }
+  });
+
+  app.post('/api/results/upload', async (req, res) => {
+    try {
+      const rawResults = Array.isArray(req.body && req.body.results) ? req.body.results : [];
+      const students = await getAllStudents();
+      const studentMap = new Map((students || []).map(student => [String(student.reg_no || student.regNo || '').trim(), student]));
+      const seen = new Set();
+      const validResults = [];
+      const errors = [];
+
+      for (let i = 0; i < rawResults.length; i += 1) {
+        const row = rawResults[i] || {};
+        const regNo = String(row.registrationNo || row.regNo || '').trim();
+        const uploadedSchoolName = String(row.schoolName || row['School Name'] || '').trim();
+        const student = studentMap.get(regNo);
+
+        if (!regNo) {
+          errors.push({ row: i + 1, message: 'Registration number is required.' });
+          continue;
+        }
+
+        if (!student) {
+          errors.push({ row: i + 1, regNo, message: 'Registration number not found in database.' });
+          continue;
+        }
+
+        const existingSchoolName = String(student.school_name || student.schoolName || '').trim();
+        if (uploadedSchoolName && existingSchoolName && uploadedSchoolName.toLowerCase() !== existingSchoolName.toLowerCase()) {
+          errors.push({ row: i + 1, regNo, message: 'School Name does not match the registered student.' });
+          continue;
+        }
+
+        if (seen.has(regNo)) {
+          errors.push({ row: i + 1, regNo, message: 'Duplicate registration number found in the uploaded file.' });
+          continue;
+        }
+        seen.add(regNo);
+
+        const marks = getResultMarksFromInput(row);
+        const missingSubjects = RESULT_SUBJECTS.filter(subject => marks[subject.key] === null).map(subject => subject.label);
+        if (missingSubjects.length > 0) {
+          errors.push({ row: i + 1, regNo, message: `Missing marks for: ${missingSubjects.join(', ')}` });
+          continue;
+        }
+
+        const invalidSubjects = RESULT_SUBJECTS.filter(subject => {
+          const value = marks[subject.key];
+          return value === null || value < 0 || value > 100;
+        }).map(subject => subject.label);
+        if (invalidSubjects.length > 0) {
+          errors.push({ row: i + 1, regNo, message: `Invalid marks for: ${invalidSubjects.join(', ')}` });
+          continue;
+        }
+
+        const summary = calculateResultSummary(marks);
+        const resultRecord = {
+          regNo,
+          studentName: buildStudentFullName(student),
+          schoolName: existingSchoolName,
+          mathematics: summary.mathematics,
+          english: summary.english,
+          science: summary.science,
+          totalMarks: summary.totalMarks,
+          percentage: summary.percentage,
+          resultStatus: summary.resultStatus,
+          status: 'DRAFT'
+        };
+        validResults.push(resultRecord);
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Result upload contains validation errors. No invalid data was published.',
+          validStudents: 0,
+          errors,
+          results: [],
+          summary: { total: 0, pass: 0, fail: 0, uploaded: 0 }
+        });
+      }
+
+      const stored = [];
+      for (const result of validResults) {
+        const record = await createOrUpdateResultRecord(result);
+        stored.push(record);
+      }
+
+      const summary = {
+        total: stored.reduce((sum, item) => sum + Number(item.totalMarks || 0), 0),
+        pass: stored.filter(item => String(item.resultStatus || '').toUpperCase() === 'PASS').length,
+        fail: stored.filter(item => String(item.resultStatus || '').toUpperCase() === 'FAIL').length,
+        uploaded: stored.length
+      };
+
+      return res.json({
+        success: true,
+        validStudents: stored.length,
+        errors: [],
+        results: stored,
+        summary,
+        message: 'Results validated successfully and saved as draft.'
+      });
+    } catch (error) {
+      console.error('Failed to import results:', error);
+      res.status(500).json({ error: 'Failed to upload results', details: error.message || String(error) });
+    }
+  });
+
+  app.get('/api/results', async (_req, res) => {
+    try {
+      const results = await getAllResults();
+      const students = await getAllStudents();
+      const studentMap = new Map((students || []).map(student => [String(student.reg_no || student.regNo || '').trim(), student]));
+
+      const formatted = (results || []).map(result => {
+        const regNo = String(result.regNo || '').trim();
+        const student = studentMap.get(regNo) || null;
+        return {
+          ...result,
+          schoolName: result.schoolName || (student ? (student.school_name || student.schoolName || '') : ''),
+          studentName: result.studentName || buildStudentFullName(student || {}),
+          className: student ? (student.student_class || student.class || '') : '',
+          medium: student ? (student.medium || '') : ''
+        };
+      });
+      res.json(formatted);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch results', details: error.message || String(error) });
+    }
+  });
+
+  app.post('/api/results/:resultId/verify', async (req, res) => {
+    try {
+      const param = String(req.params.resultId || '').trim();
+      const resultId = Number(param);
+      if (Number.isFinite(resultId)) {
+        await updateResultStatusById(resultId, 'VERIFIED');
+      } else {
+        await updateResultStatusByRegNo(param, 'VERIFIED');
+      }
+      res.json({ success: true, message: 'Result verified successfully.' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to verify result', details: error.message || String(error) });
+    }
+  });
+
+  app.post('/api/results/:resultId/publish', async (req, res) => {
+    try {
+      const param = String(req.params.resultId || '').trim();
+      const resultId = Number(param);
+      if (Number.isFinite(resultId)) {
+        await updateResultStatusById(resultId, 'PUBLISHED');
+      } else {
+        await updateResultStatusByRegNo(param, 'PUBLISHED');
+      }
+      res.json({ success: true, message: 'Result published successfully.' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to publish result', details: error.message || String(error) });
+    }
+  });
+
+  app.post('/api/results/:resultId/reopen', async (req, res) => {
+    try {
+      const param = String(req.params.resultId || '').trim();
+      const resultId = Number(param);
+      if (Number.isFinite(resultId)) {
+        await updateResultStatusById(resultId, 'DRAFT');
+      } else {
+        await updateResultStatusByRegNo(param, 'DRAFT');
+      }
+      res.json({ success: true, message: 'Result reopened for correction.' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to reopen result', details: error.message || String(error) });
+    }
+  });
+
+  app.get('/api/results/me', async (req, res) => {
+    try {
+      const regNo = String(req.query.regNo || '').trim();
+      const dob = String(req.query.dob || '').trim();
+      if (!regNo || !dob) return res.status(400).json({ error: 'Registration number and DOB are required.' });
+
+      const students = await getAllStudents();
+      const candidate = (students || []).find(student => {
+        const storedDob = normalizeDate(student.dob || student.DOB || '');
+        const requestDob = normalizeDate(dob || '');
+        const storedRegNo = String(student.reg_no || student.regNo || '').trim();
+        const inputRegNo = String(regNo || '').trim();
+        return storedRegNo === inputRegNo && storedDob && requestDob && storedDob === requestDob;
+      });
+
+      if (!candidate) {
+        return res.status(403).json({ success: false, message: 'Unauthorized access.' });
+      }
+
+      const result = await getResultByRegNo(candidate.reg_no || candidate.regNo);
+      if (!result) {
+        return res.json({
+          success: true,
+          published: false,
+          message: 'Result has not been declared yet.',
+          student: {
+            regNo: candidate.reg_no || candidate.regNo,
+            name: buildStudentFullName(candidate),
+            className: candidate.student_class || candidate.class,
+            medium: candidate.medium,
+            status: candidate.status
+          },
+          result: null
+        });
+      }
+
+      if (String(result.status || '').toUpperCase() !== 'PUBLISHED') {
+        return res.json({
+          success: true,
+          published: false,
+          message: 'Result has not been declared yet.',
+          student: {
+            regNo: candidate.reg_no || candidate.regNo,
+            name: buildStudentFullName(candidate),
+            className: candidate.student_class || candidate.class,
+            medium: candidate.medium,
+            status: candidate.status
+          },
+          result: null
+        });
+      }
+
+      const studentPayload = {
+        regNo: candidate.reg_no || candidate.regNo,
+        name: buildStudentFullName(candidate),
+        className: candidate.student_class || candidate.class,
+        medium: candidate.medium,
+        status: candidate.status
+      };
+
+      return res.json({
+        success: true,
+        published: true,
+        student: studentPayload,
+        result: {
+          regNo: result.regNo,
+          studentName: result.studentName,
+          mathematics: result.mathematics,
+          english: result.english,
+          science: result.science,
+          totalMarks: result.totalMarks,
+          percentage: result.percentage,
+          resultStatus: result.resultStatus,
+          status: result.status
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch student result', details: error.message || String(error) });
+    }
+  });
 
   app.get('/api/students', async (_req, res) => {
     if (isDbConnected && connectionPool) {

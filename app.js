@@ -83,6 +83,7 @@ const defaultStudent = {
 let dbStudents = [];
 let dbResources = [];
 let adminSession = false;
+let adminResultData = [];
 const API_BASE_URL = window.location.origin;
 try {
     const savedStudents = localStorage.getItem("imtse_students");
@@ -1157,6 +1158,307 @@ function handleDashboardLogout() {
     switchTab("home");
 }
 
+async function loadResultSummary() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/summary`);
+        const data = await response.json();
+        if (!response.ok || !data) return;
+
+        const cards = [
+            { label: 'Total Registered Students', value: data.totalRegistered || 0 },
+            { label: 'Results Uploaded', value: data.resultsUploaded || 0 },
+            { label: 'Results Verified', value: data.resultsVerified || 0 },
+            { label: 'Results Published', value: data.resultsPublished || 0 },
+            { label: 'Errors / Pending Results', value: data.errorsPending || 0 }
+        ];
+
+        const container = document.getElementById('resultSummaryGrid');
+        if (!container) return;
+        container.innerHTML = cards.map(card => `
+            <div class="summary-card">
+                <span>${card.label}</span>
+                <strong>${card.value}</strong>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.warn('Could not load result summary', error);
+    }
+}
+
+async function loadResultRows() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results`);
+        const rows = await response.json();
+        adminResultData = Array.isArray(rows) ? rows : [];
+
+        const filterSelect = document.getElementById('resultSchoolFilter');
+        if (filterSelect) {
+            const schools = [...new Set(adminResultData.map(result => String(result.schoolName || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            const currentValue = filterSelect.value || 'All Schools';
+            const options = ['<option value="All Schools">All Schools</option>']
+                .concat(schools.map(school => `<option value="${school}">${school}</option>`));
+            filterSelect.innerHTML = options.join('');
+            filterSelect.value = schools.includes(currentValue) ? currentValue : 'All Schools';
+        }
+
+        applyResultSchoolFilter();
+    } catch (error) {
+        console.warn('Could not load result rows', error);
+    }
+}
+
+function applyResultSchoolFilter() {
+    const tableBody = document.getElementById('adminResultsTable');
+    const schoolFilter = document.getElementById('resultSchoolFilter');
+    if (!tableBody) return;
+
+    const activeSchool = schoolFilter ? (schoolFilter.value || 'All Schools') : 'All Schools';
+    const filteredRows = activeSchool === 'All Schools'
+        ? adminResultData
+        : adminResultData.filter(result => String(result.schoolName || '').trim() === activeSchool);
+
+    if (!filteredRows.length) {
+        tableBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No results available for this school.</div></td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = filteredRows.map(result => `
+        <tr>
+            <td>${result.studentName || result.student_name || ''}</td>
+            <td>${result.regNo || result.reg_no || ''}</td>
+            <td>${result.schoolName || ''}</td>
+            <td>${result.className || result.standard || ''}</td>
+            <td>${Number(result.totalMarks || result.total_marks || 0)}/300</td>
+            <td>${Number(result.percentage || 0).toFixed(2)}%</td>
+            <td><span class="status-badge ${String(result.status || '').toLowerCase()}">${result.status || 'DRAFT'}</span></td>
+            <td>
+                ${String(result.status || '').toUpperCase() === 'DRAFT' ? `<button class="btn-secondary" type="button" onclick="verifyResultRow('${result.regNo || result.reg_no || ''}')">Verify</button>` : ''}
+                ${String(result.status || '').toUpperCase() === 'VERIFIED' ? `<button class="btn-secondary" type="button" onclick="publishResultRow('${result.regNo || result.reg_no || ''}')">Publish</button>` : ''}
+                ${String(result.status || '').toUpperCase() === 'PUBLISHED' ? `<button class="btn-secondary" type="button" onclick="reopenResultRow('${result.regNo || result.reg_no || ''}')">Reopen</button>` : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function verifyResultRow(regNo) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/verify`, { method: 'POST' });
+        if (!response.ok) throw new Error('Verification failed');
+        await loadResultRows();
+        await loadResultSummary();
+    } catch (error) {
+        console.error('Failed to verify result', error);
+        alert('Result verification failed.');
+    }
+}
+
+async function publishResultRow(regNo) {
+    if (!confirm('Are you sure you want to publish the results? Students will be able to view their results after the release time.')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/publish`, { method: 'POST' });
+        if (!response.ok) throw new Error('Publish failed');
+        await loadResultRows();
+        await loadResultSummary();
+    } catch (error) {
+        console.error('Failed to publish result', error);
+        alert('Result publication failed.');
+    }
+}
+
+async function reopenResultRow(regNo) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/reopen`, { method: 'POST' });
+        if (!response.ok) throw new Error('Reopen failed');
+        await loadResultRows();
+        await loadResultSummary();
+    } catch (error) {
+        console.error('Failed to reopen result', error);
+        alert('Result reopen failed.');
+    }
+}
+
+function adminDownloadRegisteredStudentsExcel() {
+    fetch(`${API_BASE_URL}/api/students/export`)
+        .then(async response => {
+            if (!response.ok) throw new Error('Export failed');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'registered_students.csv';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+            console.error('Failed to export students CSV', error);
+            alert('Could not download registered student spreadsheet.');
+        });
+}
+
+function adminDownloadResultTemplate() {
+    fetch(`${API_BASE_URL}/api/results/template`)
+        .then(async response => {
+            if (!response.ok) throw new Error('Template fetch failed');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'result_template.csv';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+            console.error('Failed to download result template', error);
+            alert('Could not download the result template.');
+        });
+}
+
+async function handleResultExcelUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+        try {
+            const text = String(reader.result || '');
+            const rows = text.split(/\r?\n/).filter(Boolean);
+            if (!rows.length) throw new Error('The uploaded file is empty.');
+
+            const headers = rows[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const resultRows = rows.slice(1).map(line => {
+                const values = line.split(',');
+                const obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = (values[index] || '').replace(/"/g, '').trim();
+                });
+                return obj;
+            }).filter(row => Object.values(row).some(value => value !== ''));
+
+            const payload = {
+                results: resultRows.map(row => ({
+                    registrationNo: row['Registration No'] || row['Registration Number'] || '',
+                    mathematics: Number(row['Mathematics'] || row['Maths'] || 0),
+                    english: Number(row['English'] || 0),
+                    science: Number(row['Science'] || 0)
+                }))
+            };
+
+            const response = await fetch(`${API_BASE_URL}/api/results/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                const errorBox = document.getElementById('resultUploadErrors');
+                errorBox.classList.remove('hidden');
+                errorBox.innerHTML = (data.errors || []).map(error => `<div>${error.message || error}</div>`).join('') || '<div>Result upload failed.</div>';
+                return;
+            }
+
+            const errorBox = document.getElementById('resultUploadErrors');
+            errorBox.classList.add('hidden');
+            errorBox.innerHTML = '';
+            await loadResultRows();
+            await loadResultSummary();
+            alert(`${data.validStudents} valid students uploaded. ${data.summary ? data.summary.pass : 0} passed, ${data.summary ? data.summary.fail : 0} failed.`);
+        } catch (error) {
+            console.error('Result upload failed', error);
+            alert('Could not process the result upload. Please verify the file format.');
+        }
+    };
+    reader.readAsText(file);
+}
+
+async function fetchStudentResultForDashboard() {
+    const student = activeStudentSession;
+    const resultCard = document.getElementById('studentResultCard');
+    if (!resultCard || !student) return;
+
+    const regNo = student.regNo || '';
+    const dob = student.dob || '';
+    if (!regNo || !dob) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/me?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`);
+        const data = await response.json();
+        if (!response.ok || !data || !data.success || !data.result) {
+            resultCard.innerHTML = '<div class="result-status-message">Result has not been declared yet.</div>';
+            resultCard.classList.remove('hidden');
+            return;
+        }
+
+        const result = data.result;
+        resultCard.innerHTML = `
+            <div class="card-header-icon orange"><i data-lucide="bar-chart-3"></i></div>
+            <h3>EXAM RESULT</h3>
+            <div class="student-result-meta">
+                <div><strong>Student Name:</strong> ${result.studentName || data.student.name}</div>
+                <div><strong>Registration Number:</strong> ${result.regNo}</div>
+                <div><strong>Standard:</strong> ${data.student.className}</div>
+                <div><strong>Exam Name:</strong> IMTSE 2026-27</div>
+            </div>
+            <div class="subject-result-list">
+                <div><span>Mathematics</span><strong>${result.mathematics}</strong></div>
+                <div><span>English</span><strong>${result.english}</strong></div>
+                <div><span>Science</span><strong>${result.science}</strong></div>
+                <div><span>Total</span><strong>${result.totalMarks} / 300</strong></div>
+                <div><span>Percentage</span><strong>${Number(result.percentage || 0).toFixed(2)}%</strong></div>
+                <div><span>Result</span><strong>${result.resultStatus}</strong></div>
+            </div>
+        `;
+        resultCard.classList.remove('hidden');
+        lucide.createIcons();
+    } catch (error) {
+        console.warn('Could not load student result', error);
+        resultCard.innerHTML = '<div class="result-status-message">Result has not been declared yet.</div>';
+        resultCard.classList.remove('hidden');
+    }
+}
+
+function openPaymentScreenshotModal(imgData) {
+    const modal = document.getElementById('paymentScreenshotModal');
+    const image = document.getElementById('paymentScreenshotImage');
+    if (!modal || !image) return;
+    image.src = imgData || '';
+    modal.classList.remove('hidden');
+}
+
+function closePaymentScreenshotModal() {
+    const modal = document.getElementById('paymentScreenshotModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function showAdminPaymentScreenshot(regNo) {
+    const student = dbStudents.find(item => item.regNo === regNo || item.whatsapp === regNo);
+    if (!student) {
+        alert('Student not found.');
+        return;
+    }
+
+    const mode = String(student.payMode || student.pay_mode || '').toLowerCase();
+    if (!mode.includes('online') && !mode.includes('upi')) {
+        alert('Payment Screenshot: Not Required');
+        return;
+    }
+
+    const screenshot = student.paymentScreenshotData || student.payment_screenshot_data;
+    if (!screenshot) {
+        alert('No payment screenshot is available for this student.');
+        return;
+    }
+
+    openPaymentScreenshotModal(screenshot);
+}
+
+function createResultStatusBadge(status) {
+    return `<span class="status-badge ${String(status || '').toLowerCase()}">${status || 'DRAFT'}</span>`;
+}
+
 function getClassPrefix(clsInput) {
     const cls = String(clsInput || "").trim().toUpperCase();
     if (/\b(I|1|1ST)\b/.test(cls)) return "A";
@@ -1652,19 +1954,24 @@ function resetAdminResourceForm() {
 function showAdminPanel(panelName) {
     const studentPanel = document.getElementById("adminStudentPanel");
     const resourcePanel = document.getElementById("adminResourcePanel");
+    const resultPanel = document.getElementById("adminResultPanel");
     const buttons = document.querySelectorAll(".panel-toggle");
 
-    if (panelName === "resources") {
-        studentPanel.classList.add("hidden");
-        resourcePanel.classList.remove("hidden");
-    } else {
-        studentPanel.classList.remove("hidden");
-        resourcePanel.classList.add("hidden");
-    }
+    const visiblePanel = panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : studentPanel;
+    const hiddenPanels = [studentPanel, resourcePanel, resultPanel].filter(panel => panel && panel !== visiblePanel);
+
+    if (visiblePanel) visiblePanel.classList.remove('hidden');
+    hiddenPanels.forEach(panel => panel && panel.classList.add('hidden'));
 
     buttons.forEach(button => {
-        button.classList.toggle("active", button.textContent.includes(panelName === "resources" ? "Study Resources" : "Student Profiles"));
+        const isActive = button.textContent.includes(panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : 'Student Profiles');
+        button.classList.toggle('active', isActive);
     });
+
+    if (panelName === 'results') {
+        loadResultSummary();
+        loadResultRows();
+    }
 }
 
 function toggleResourceInputMode() {

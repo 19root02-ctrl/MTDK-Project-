@@ -965,6 +965,7 @@
                         <div class="admin-panel-switcher">
                             <button type="button" class="panel-toggle active" onclick="showAdminPanel('students')">Student Profiles</button>
                             <button type="button" class="panel-toggle" onclick="showAdminPanel('resources')">Study Resources</button>
+                            <button type="button" class="panel-toggle" onclick="showAdminPanel('results')">Result Management</button>
                         </div>
                         <button class="btn-secondary" onclick="logoutAdmin()">Lock Panel</button>
                     </div>
@@ -1147,6 +1148,58 @@
                                 </table>
                             </div>
                         </section>
+
+                        <section id="adminResultPanel" class="admin-card admin-panel-section hidden">
+                            <div class="admin-card-header">
+                                <div>
+                                    <h3>Result Management</h3>
+                                    <p>Upload, validate, review, verify, and publish exam results for registered students.</p>
+                                </div>
+                                <div class="result-toolbar-actions">
+                                    <button type="button" class="btn-secondary" onclick="adminDownloadRegisteredStudentsExcel()">Download Registered Students Excel</button>
+                                    <button type="button" class="btn-secondary" onclick="adminDownloadResultTemplate()">Download Result Template</button>
+                                </div>
+                            </div>
+
+                            <div class="result-summary-grid" id="resultSummaryGrid"></div>
+
+                            <div class="result-upload-panel">
+                                <div class="upload-box">
+                                    <label for="resultExcelInput">Upload Result Excel</label>
+                                    <input type="file" id="resultExcelInput" accept=".csv,.xls,.xlsx" onchange="handleResultExcelUpload(event)">
+                                    <small>Use the downloaded template and include Mathematics, English, and Science marks.</small>
+                                </div>
+                            </div>
+
+                            <div class="form-row" style="margin: 12px 0 18px; align-items: end;">
+                                <div class="input-group" style="min-width: 220px;">
+                                    <label for="resultSchoolFilter">School</label>
+                                    <select id="resultSchoolFilter" onchange="applyResultSchoolFilter()">
+                                        <option value="All Schools">All Schools</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Student</th>
+                                            <th>Reg No</th>
+                                            <th>School</th>
+                                            <th>Standard</th>
+                                            <th>Total</th>
+                                            <th>Percentage</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminResultsTable"></tbody>
+                                </table>
+                            </div>
+
+                            <div id="resultUploadErrors" class="result-alert-box hidden"></div>
+                        </section>
                     </div>
                 </div>
             </div>
@@ -1250,6 +1303,8 @@
                                 <div id="studentResourcesList" class="download-list"></div>
                             </div>
                         </div>
+
+                        <div id="studentResultCard" class="dash-card result-card hidden"></div>
                     </div>
 
                 </div>
@@ -1259,6 +1314,16 @@
     </main>
 
     <!-- Footer -->
+    <div id="paymentScreenshotModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Payment Screenshot</h3>
+                <button type="button" class="btn-secondary" onclick="closePaymentScreenshotModal()">Close</button>
+            </div>
+            <img id="paymentScreenshotImage" src="" alt="Payment screenshot preview" />
+        </div>
+    </div>
+
     <footer class="site-footer">
         <div class="footer-container">
             <div class="footer-brand">
@@ -1290,6 +1355,7 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="hallTicketConfig.js"></script>
     <script id="appScript" src="app.js"></script>
     <script>
