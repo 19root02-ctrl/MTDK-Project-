@@ -253,7 +253,7 @@ test('PUT /api/students/:studentId updates the student record in the database', 
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
-test('POST /api/results/upload validates and calculates results for valid marks', async () => {
+test('POST /api/results/upload calculates a senior 200-mark total', async () => {
   const fakePool = createFakePool({
     selectStudent: {
       reg_no: 'IMTSE-10001',
@@ -287,9 +287,12 @@ test('POST /api/results/upload validates and calculates results for valid marks'
         results: [{
           registrationNo: 'IMTSE-10001',
           schoolName: 'TEST SCHOOL',
-          mathematics: 80,
-          english: 75,
-          science: 90
+          marathi: 30,
+          english: 30,
+          maths: 30,
+          evsScience: 30,
+          socialScience: 30,
+          logicalReasoning: 50
         }]
       })
     });
@@ -297,10 +300,53 @@ test('POST /api/results/upload validates and calculates results for valid marks'
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.validStudents, 1);
-    assert.equal(payload.summary.total, 245);
-    assert.equal(payload.results[0].resultStatus, 'PASS');
+    assert.equal(payload.summary.total, 200);
+    assert.equal(payload.results[0].totalMarks, 200);
+    assert.equal(payload.results[0].percentage, undefined);
+    assert.equal(payload.results[0].resultStatus, undefined);
   } finally {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('POST /api/results/upload calculates a junior 200-mark total', async () => {
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-20001',
+      full_name: 'JUNIOR USER',
+      student_class: 'IV',
+      medium: 'English',
+      school_name: 'JUNIOR SCHOOL'
+    }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/results/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: [{
+        registrationNo: 'IMTSE-20001',
+        schoolName: 'JUNIOR SCHOOL',
+        marathi: 40,
+        english: 40,
+        maths: 40,
+        evs: 40,
+        logicalReasoning: 40,
+        socialScience: 99
+      }] })
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.results[0].totalMarks, 200);
+    assert.equal(payload.results[0].socialScience, undefined);
+    assert.equal(payload.results[0].percentage, undefined);
+    assert.equal(payload.results[0].resultStatus, undefined);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
 });
 
@@ -371,40 +417,13 @@ test('POST /api/results/upload rejects a mismatched school name and keeps multi-
 test('GET /api/students/export and /api/results/template include the school name for multi-school data', async () => {
   const fakePool = createFakePool({
     listStudents: [{
-      reg_no: 'IMTSE-10001',
-      full_name: 'RAHUL PATIL',
-      student_class: 'V',
-      medium: 'English',
-      school_name: 'ABC School',
-      dob: '2014-08-15',
-      parent_name: 'RAMESH PATIL',
-      whatsapp: '1234567890',
-      email: 'rahul@example.com',
-      address: 'Address 1',
-      amount: '₹500.00',
-      pay_mode: 'Cash',
-      status: 'Approved',
-      reg_date: '2026-07-19'
+      reg_no: 'IMTSE-10001', full_name: 'RAHUL PATIL', student_class: 'V', medium: 'English', school_name: 'ABC School', pay_mode: 'Cash'
     }, {
-      reg_no: 'IMTSE-10002',
-      full_name: 'PRIYA SHAH',
-      student_class: 'VI',
-      medium: 'English',
-      school_name: 'XYZ School',
-      dob: '2013-09-14',
-      parent_name: 'KIRAN SHAH',
-      whatsapp: '9876543210',
-      email: 'priya@example.com',
-      address: 'Address 2',
-      amount: '₹500.00',
-      pay_mode: 'UPI',
-      status: 'Approved',
-      reg_date: '2026-07-20'
+      reg_no: 'IMTSE-10002', full_name: 'PRIYA SHAH', student_class: 'IV', medium: 'English', school_name: 'XYZ School', pay_mode: 'UPI'
     }]
   });
-
   const app = createServer({ pool: fakePool });
-  const server = await new Promise((resolve) => {
+  const server = await new Promise(resolve => {
     const httpServer = app.listen(0, () => resolve(httpServer));
   });
 
@@ -412,17 +431,17 @@ test('GET /api/students/export and /api/results/template include the school name
     const port = server.address().port;
     const studentsRes = await fetch(`http://127.0.0.1:${port}/api/students/export`);
     assert.equal(studentsRes.status, 200);
-    const studentsCsv = await studentsRes.text();
-    assert.match(studentsCsv, /School Name/i);
-    assert.match(studentsCsv, /ABC School/i);
+    assert.match(await studentsRes.text(), /ABC School/i);
 
     const templateRes = await fetch(`http://127.0.0.1:${port}/api/results/template`);
     assert.equal(templateRes.status, 200);
     const templateCsv = await templateRes.text();
-    assert.match(templateCsv, /School Name/i);
-    assert.match(templateCsv, /ABC School/i);
+    assert.match(templateCsv, /Registration No,Student Name,School Name,Standard,Medium,Payment Mode,Marathi,English,Maths,EVS \/ Science,Social Science,Logical Reasoning,Total/);
+    assert.match(templateCsv, /IMTSE-10001/);
+    assert.match(templateCsv, /IMTSE-10002/);
+    assert.doesNotMatch(templateCsv, /Gender|Percentage|Result Status|PASS|FAIL/i);
   } finally {
-    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
 });
 
@@ -522,10 +541,10 @@ test('Result template and upload normalize Registration No headers and ignore bl
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         results: [
-          { 'Reg. No': 'IMTSE-34990', 'Mathematics': '80', 'English': '85', 'Science': '90', 'School Name': 'ABC School' },
-          { 'Registration Number': 'IMTSE-34991', 'Mathematics': '70', 'English': '72', 'Science': '74', 'School Name': 'XYZ School' },
+            { 'Reg. No': 'IMTSE-34990', Marathi: '30', English: '30', Maths: '30', EVS: '30', 'Social Science': '30', 'Logical Reasoning': '50', 'School Name': 'ABC School' },
+            { 'Registration Number': 'IMTSE-34991', Marathi: '30', English: '30', Maths: '30', 'EVS / Science': '30', 'Social Science': '30', 'Logical Reasoning': '50', 'School Name': 'XYZ School' },
           { 'Registration No': '', 'Mathematics': '', 'English': '', 'Science': '', 'School Name': '' },
-          { 'Reg No': 'IMTSE-99999', 'Mathematics': '90', 'English': '90', 'Science': '90', 'School Name': 'ABC School' }
+          { 'Reg No': 'IMTSE-99999', Marathi: '30', English: '30', Maths: '30', 'EVS / Science': '30', 'Social Science': '30', 'Logical Reasoning': '50', 'School Name': 'ABC School' }
         ]
       })
     });

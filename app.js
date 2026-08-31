@@ -1199,18 +1199,24 @@ function renderResultPreview(rows = []) {
     }
 
     previewWrapper.classList.remove('hidden');
+    const isJunior = resultPreviewData.every(result => /^(I|II|III|IV|1|2|3|4)(?:ST|ND|RD|TH)?\b/i.test(String(result.className || result.standard || '')));
+    const previewHead = previewTable.parentElement?.querySelector('thead tr');
+    if (previewHead) {
+        previewHead.innerHTML = ['Student', 'Reg No', 'School', 'Marathi', 'English', 'Maths', 'EVS / Science', ...(isJunior ? [] : ['Social Science']), 'Logical Reasoning', 'Total']
+            .map(label => `<th>${label}</th>`).join('');
+    }
     previewTable.innerHTML = resultPreviewData.map(result => `
         <tr>
             <td>${result.studentName || ''}</td>
             <td>${result.regNo || ''}</td>
             <td>${result.schoolName || ''}</td>
-            <td>${Number(result.mathematics ?? 0)}</td>
+            <td>${Number(result.marathi ?? 0)}</td>
             <td>${Number(result.english ?? 0)}</td>
-            <td>${Number(result.science ?? 0)}</td>
+            <td>${Number(result.maths ?? 0)}</td>
+            <td>${Number(result.evsScience ?? result.evs ?? 0)}</td>
+            ${isJunior ? '' : `<td>${Number(result.socialScience ?? 0)}</td>`}
+            <td>${Number(result.logicalReasoning ?? 0)}</td>
             <td>${Number(result.totalMarks || 0)}</td>
-            <td>${Number(result.percentage || 0).toFixed(2)}%</td>
-            <td>${result.resultStatus || 'FAIL'}</td>
-            <td><span class="status-badge ${String(result.status || '').toLowerCase()}">${result.status || 'DRAFT'}</span></td>
         </tr>
     `).join('');
 }
@@ -1258,8 +1264,7 @@ function applyResultSchoolFilter() {
             <td>${result.regNo || result.reg_no || ''}</td>
             <td>${result.schoolName || ''}</td>
             <td>${result.className || result.standard || ''}</td>
-            <td>${Number(result.totalMarks || result.total_marks || 0)}/300</td>
-            <td>${Number(result.percentage || 0).toFixed(2)}%</td>
+            <td>${Number(result.totalMarks || result.total_marks || 0)}/200</td>
             <td><span class="status-badge ${String(result.status || '').toLowerCase()}">${result.status || 'DRAFT'}</span></td>
             <td>
                 ${String(result.status || '').toUpperCase() === 'DRAFT' ? `<button class="btn-secondary" type="button" onclick="verifyResultRow('${result.regNo || result.reg_no || ''}')">Verify</button>` : ''}
@@ -1328,12 +1333,18 @@ function adminDownloadRegisteredStudentsExcel() {
 }
 
 function normalizeCsvHeaderName(value = '') {
-    return String(value)
+    const normalized = String(value)
         .trim()
         .toLowerCase()
         .replace(/\uFEFF/g, '')
-        .replace(/[^a-z0-9]+/g, '')
-        .replace(/^regno$/, 'regno');
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .replace(/_+/g, '_');
+
+    if (['registration_no', 'registration_number', 'reg_no', 'reg_number', 'regno'].includes(normalized)) {
+        return 'reg_no';
+    }
+    return normalized;
 }
 
 function parseCsvLine(line = '') {
@@ -1399,6 +1410,16 @@ function getValueByNormalizedHeader(row = {}, keys = []) {
     return foundEntry ? String(foundEntry[1] ?? '').trim() : '';
 }
 
+function parseResultSpreadsheet(buffer) {
+    if (typeof XLSX === 'undefined') {
+        throw new Error('Spreadsheet parser is unavailable.');
+    }
+
+    const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array', raw: false });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '', raw: false });
+}
+
 function adminDownloadResultTemplate() {
     fetch(`${API_BASE_URL}/api/results/template`)
         .then(async response => {
@@ -1426,12 +1447,10 @@ async function handleResultExcelUpload(event) {
     const reader = new FileReader();
     reader.onload = async () => {
         try {
-            const text = String(reader.result || '');
-            const rows = readCsvFileRows(text);
+            const rows = parseResultSpreadsheet(reader.result);
             if (!rows.length) throw new Error('The uploaded file is empty.');
 
             const headers = rows[0].map(h => String(h || '').trim().replace(/^\uFEFF/, ''));
-            const normalizedHeaders = headers.map(h => normalizeCsvHeaderName(h));
             const resultRows = rows.slice(1).map(line => {
                 const obj = {};
                 headers.forEach((header, index) => {
@@ -1442,11 +1461,13 @@ async function handleResultExcelUpload(event) {
 
             const payload = {
                 results: resultRows.map(row => ({
-                    registrationNo: getValueByNormalizedHeader(row, ['Registration No', 'Registration Number', 'Reg No', 'Reg. No', 'reg_no', 'registrationno', 'regno']) ||
-                        getValueByNormalizedHeader(row, ['Registration No', 'Registration Number', 'Reg No', 'Reg. No', 'reg_no', 'registrationno', 'regno']),
-                    mathematics: Number(getValueByNormalizedHeader(row, ['Mathematics', 'Maths']) || 0),
+                    registrationNo: getValueByNormalizedHeader(row, ['Registration No', 'Registration Number', 'Reg No', 'Reg. No', 'reg_no', 'registrationno', 'regno']),
+                    marathi: Number(getValueByNormalizedHeader(row, ['Marathi']) || 0),
                     english: Number(getValueByNormalizedHeader(row, ['English']) || 0),
-                    science: Number(getValueByNormalizedHeader(row, ['Science']) || 0),
+                    maths: Number(getValueByNormalizedHeader(row, ['Maths', 'Mathematics']) || 0),
+                    evsScience: Number(getValueByNormalizedHeader(row, ['EVS / Science', 'EVS', 'Science']) || 0),
+                    socialScience: Number(getValueByNormalizedHeader(row, ['Social Science']) || 0),
+                    logicalReasoning: Number(getValueByNormalizedHeader(row, ['Logical Reasoning']) || 0),
                     schoolName: getValueByNormalizedHeader(row, ['School Name', 'schoolname']) || ''
                 }))
             };
@@ -1470,13 +1491,13 @@ async function handleResultExcelUpload(event) {
             renderResultPreview(data.results || []);
             await loadResultRows();
             await loadResultSummary();
-            alert(`${data.validStudents} valid students uploaded. ${data.summary ? data.summary.pass : 0} passed, ${data.summary ? data.summary.fail : 0} failed.`);
+            alert(`${data.validStudents} valid students uploaded.`);
         } catch (error) {
             console.error('Result upload failed', error);
             alert('Could not process the result upload. Please verify the file format.');
         }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
 }
 
 async function fetchStudentResultForDashboard() {
@@ -1498,22 +1519,25 @@ async function fetchStudentResultForDashboard() {
         }
 
         const result = data.result;
+        const isJunior = /^(I|II|III|IV|1|2|3|4)(?:ST|ND|RD|TH)?\b/i.test(String(data.student.className || ''));
         resultCard.innerHTML = `
             <div class="card-header-icon orange"><i data-lucide="bar-chart-3"></i></div>
             <h3>EXAM RESULT</h3>
             <div class="student-result-meta">
                 <div><strong>Student Name:</strong> ${result.studentName || data.student.name}</div>
                 <div><strong>Registration Number:</strong> ${result.regNo}</div>
+                <div><strong>School Name:</strong> ${data.student.schoolName || ''}</div>
                 <div><strong>Standard:</strong> ${data.student.className}</div>
                 <div><strong>Exam Name:</strong> IMTSE 2026-27</div>
             </div>
             <div class="subject-result-list">
-                <div><span>Mathematics</span><strong>${result.mathematics}</strong></div>
+                <div><span>Marathi</span><strong>${result.marathi}</strong></div>
                 <div><span>English</span><strong>${result.english}</strong></div>
-                <div><span>Science</span><strong>${result.science}</strong></div>
-                <div><span>Total</span><strong>${result.totalMarks} / 300</strong></div>
-                <div><span>Percentage</span><strong>${Number(result.percentage || 0).toFixed(2)}%</strong></div>
-                <div><span>Result</span><strong>${result.resultStatus}</strong></div>
+                <div><span>Maths</span><strong>${result.maths}</strong></div>
+                <div><span>EVS / Science</span><strong>${result.evsScience ?? result.evs}</strong></div>
+                ${isJunior ? '' : `<div><span>Social Science</span><strong>${result.socialScience}</strong></div>`}
+                <div><span>Logical Reasoning</span><strong>${result.logicalReasoning}</strong></div>
+                <div><span>Total</span><strong>${result.totalMarks} / 200</strong></div>
             </div>
         `;
         resultCard.classList.remove('hidden');

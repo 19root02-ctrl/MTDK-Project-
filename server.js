@@ -15,13 +15,25 @@ if (!global.__students) global.__students = [];
 if (!global.__resources) global.__resources = [];
 if (!global.__student_results) global.__student_results = [];
 
-const RESULT_SUBJECTS = [
-  { key: 'mathematics', label: 'Mathematics', maxMarks: 100, minPass: 35 },
-  { key: 'english', label: 'English', maxMarks: 100, minPass: 35 },
-  { key: 'science', label: 'Science', maxMarks: 100, minPass: 35 }
-];
+const RESULT_FORMATS = {
+  junior: [
+    { key: 'marathi', label: 'Marathi', maxMarks: 40 },
+    { key: 'english', label: 'English', maxMarks: 40 },
+    { key: 'maths', label: 'Maths', maxMarks: 40 },
+    { key: 'evs', label: 'EVS', maxMarks: 40 },
+    { key: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 40 }
+  ],
+  senior: [
+    { key: 'marathi', label: 'Marathi', maxMarks: 30 },
+    { key: 'english', label: 'English', maxMarks: 30 },
+    { key: 'maths', label: 'Maths', maxMarks: 30 },
+    { key: 'evsScience', label: 'EVS / Science', maxMarks: 30 },
+    { key: 'socialScience', label: 'Social Science', maxMarks: 30 },
+    { key: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 50 }
+  ]
+};
 
-const MAX_RESULT_TOTAL = 300;
+const MAX_RESULT_TOTAL = 200;
 
 let connectionPool = null;
 let isDbConnected = false;
@@ -246,56 +258,60 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getResultMarksFromInput(rawMarks = {}) {
+function getClassNumber(value = '') {
+  const normalized = String(value || '').trim().toUpperCase();
+  const romanClasses = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+  const numericMatch = normalized.match(/(?:CLASS\s*)?(10|[1-9])(?:ST|ND|RD|TH)?/);
+  if (numericMatch) return Number(numericMatch[1]);
+  const romanMatch = normalized.match(/\b(I{1,3}|IV|V?I{0,3}|IX|X)\b/);
+  return romanMatch ? romanClasses[romanMatch[1]] || null : null;
+}
+
+function getResultSubjects(studentClass = '') {
+  return getClassNumber(studentClass) !== null && getClassNumber(studentClass) <= 4
+    ? RESULT_FORMATS.junior
+    : RESULT_FORMATS.senior;
+}
+
+function getResultMarksFromInput(rawMarks = {}, studentClass = '') {
   const marks = {};
-  RESULT_SUBJECTS.forEach(subject => {
-    const directValue = rawMarks[subject.key] ?? rawMarks[subject.label] ?? rawMarks[subject.label.toLowerCase()] ?? rawMarks[subject.key.toUpperCase()];
+  getResultSubjects(studentClass).forEach(subject => {
+    const aliases = [subject.key, subject.label, subject.label.toLowerCase()];
+    if (subject.key === 'evsScience') aliases.push('EVS', 'Science', 'EVS/Science', 'evs_science');
+    const directValue = aliases.map(alias => rawMarks[alias]).find(value => value !== undefined);
     const parsed = toNumber(directValue);
-    marks[subject.key] = parsed !== null && parsed >= 0 && parsed <= 100 ? parsed : null;
+    marks[subject.key] = parsed !== null && parsed >= 0 && parsed <= subject.maxMarks ? parsed : null;
   });
   return marks;
 }
 
-function calculateResultSummary(rawMarks = {}) {
-  const marks = getResultMarksFromInput(rawMarks);
-  const mathematics = marks.mathematics;
-  const english = marks.english;
-  const science = marks.science;
-  const totalMarks = (mathematics ?? 0) + (english ?? 0) + (science ?? 0);
-  const percentage = totalMarks === 0 ? 0 : Number(((totalMarks / MAX_RESULT_TOTAL) * 100).toFixed(2));
-  const resultStatus = mathematics !== null && english !== null && science !== null && mathematics >= 35 && english >= 35 && science >= 35 ? 'PASS' : 'FAIL';
-
+function calculateResultSummary(rawMarks = {}, studentClass = '') {
+  const subjects = getResultSubjects(studentClass);
+  const marks = getResultMarksFromInput(rawMarks, studentClass);
   return {
-    mathematics,
-    english,
-    science,
-    totalMarks,
-    percentage,
-    resultStatus
+    ...marks,
+    totalMarks: subjects.reduce((total, subject) => total + (marks[subject.key] ?? 0), 0)
   };
 }
 
-function serializeResultRecord(row) {
+function serializeResultRecord(row, studentClass = '') {
   if (!row) return null;
-  const subjectMarks = {
-    mathematics: toNumber(row.mathematics),
-    english: toNumber(row.english),
-    science: toNumber(row.science)
-  };
-  const summary = calculateResultSummary(subjectMarks);
+  const resolvedClass = studentClass || row.className || row.standard || '';
+  const subjects = getResultSubjects(resolvedClass);
+  const subjectMarks = {};
+  subjects.forEach(subject => {
+    const legacyValue = subject.key === 'maths' ? row.mathematics : subject.key === 'evsScience' ? row.science : undefined;
+    subjectMarks[subject.key] = toNumber(row[subject.key] ?? legacyValue);
+  });
   const status = String(row.status || 'DRAFT').toUpperCase();
-  const resultStatus = String(row.result_status || summary.resultStatus || 'FAIL').toUpperCase();
 
   return {
     id: row.id,
     regNo: row.reg_no || row.regNo,
     studentName: row.student_name || row.studentName || '',
-    mathematics: subjectMarks.mathematics,
-    english: subjectMarks.english,
-    science: subjectMarks.science,
-    totalMarks: Number(row.total_marks ?? summary.totalMarks ?? 0),
-    percentage: Number(row.percentage ?? summary.percentage ?? 0),
-    resultStatus: resultStatus,
+    className: resolvedClass,
+    ...subjectMarks,
+    totalMarks: Number(row.total_marks ?? 0),
     status,
     verifiedAt: row.verified_at || null,
     publishedAt: row.published_at || null,
@@ -359,7 +375,9 @@ async function getAllResults() {
   if (isDbConnected && connectionPool) {
     try {
       const result = await connectionPool.query('SELECT * FROM student_results ORDER BY created_at DESC');
-      return getQueryRows(result).map(row => serializeResultRecord(row));
+      const students = await getAllStudents();
+      const classes = new Map((students || []).map(student => [String(student.reg_no || student.regNo || '').trim(), student.student_class || student.class || '']));
+      return getQueryRows(result).map(row => serializeResultRecord(row, classes.get(String(row.reg_no || row.regNo || '').trim())));
     } catch (e) {
       console.error('Failed to fetch results from PostgreSQL DB:', e);
     }
@@ -367,7 +385,7 @@ async function getAllResults() {
   return (global.__student_results || []).map(row => serializeResultRecord(row));
 }
 
-async function getResultByRegNo(regNo) {
+async function getResultByRegNo(regNo, studentClass = '') {
   const target = String(regNo || '').trim();
   if (!target) return null;
 
@@ -375,14 +393,14 @@ async function getResultByRegNo(regNo) {
     try {
       const result = await connectionPool.query('SELECT * FROM student_results WHERE reg_no = $1 LIMIT 1', [target]);
       const rows = getQueryRows(result);
-      if (rows && rows.length > 0) return serializeResultRecord(rows[0]);
+      if (rows && rows.length > 0) return serializeResultRecord(rows[0], studentClass);
     } catch (e) {
       console.error('Failed to fetch result by registration number:', e);
     }
   }
 
   const match = (global.__student_results || []).find(item => String(item.reg_no || item.regNo || '').trim() === target);
-  return match ? serializeResultRecord(match) : null;
+  return match ? serializeResultRecord(match, studentClass) : null;
 }
 
 async function createOrUpdateResultRecord(resultPayload) {
@@ -391,26 +409,32 @@ async function createOrUpdateResultRecord(resultPayload) {
       const values = [
         resultPayload.regNo,
         resultPayload.studentName || '',
-        Number(resultPayload.mathematics ?? 0),
+        Number(resultPayload.maths ?? 0),
         Number(resultPayload.english ?? 0),
-        Number(resultPayload.science ?? 0),
+        Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
         Number(resultPayload.totalMarks ?? 0),
-        Number(resultPayload.percentage ?? 0),
-        String(resultPayload.resultStatus || 'FAIL').toUpperCase(),
+        Number(resultPayload.marathi ?? 0),
+        Number(resultPayload.maths ?? 0),
+        Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
+        Number(resultPayload.socialScience ?? 0),
+        Number(resultPayload.logicalReasoning ?? 0),
         String(resultPayload.status || 'DRAFT').toUpperCase()
       ];
 
       await connectionPool.query(`
-        INSERT INTO student_results (reg_no, student_name, mathematics, english, science, total_marks, percentage, result_status, status, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO student_results (reg_no, student_name, mathematics, english, science, total_marks, marathi, maths, evs_science, social_science, logical_reasoning, percentage, result_status, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, '', $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (reg_no)
         DO UPDATE SET student_name = EXCLUDED.student_name,
                       mathematics = EXCLUDED.mathematics,
                       english = EXCLUDED.english,
                       science = EXCLUDED.science,
                       total_marks = EXCLUDED.total_marks,
-                      percentage = EXCLUDED.percentage,
-                      result_status = EXCLUDED.result_status,
+                      marathi = EXCLUDED.marathi,
+                      maths = EXCLUDED.maths,
+                      evs_science = EXCLUDED.evs_science,
+                      social_science = EXCLUDED.social_science,
+                      logical_reasoning = EXCLUDED.logical_reasoning,
                       status = EXCLUDED.status,
                       updated_at = CURRENT_TIMESTAMP
       `, values);
@@ -425,12 +449,17 @@ async function createOrUpdateResultRecord(resultPayload) {
     regNo: resultPayload.regNo,
     student_name: resultPayload.studentName || '',
     studentName: resultPayload.studentName || '',
-    mathematics: Number(resultPayload.mathematics ?? 0),
+    className: resultPayload.className || '',
+    mathematics: Number(resultPayload.maths ?? 0),
     english: Number(resultPayload.english ?? 0),
-    science: Number(resultPayload.science ?? 0),
+    science: Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
+    marathi: Number(resultPayload.marathi ?? 0),
+    maths: Number(resultPayload.maths ?? 0),
+    evs: Number(resultPayload.evs ?? 0),
+    evsScience: Number(resultPayload.evsScience ?? 0),
+    socialScience: Number(resultPayload.socialScience ?? 0),
+    logicalReasoning: Number(resultPayload.logicalReasoning ?? 0),
     total_marks: Number(resultPayload.totalMarks ?? 0),
-    percentage: Number(resultPayload.percentage ?? 0),
-    result_status: String(resultPayload.resultStatus || 'FAIL').toUpperCase(),
     status: String(resultPayload.status || 'DRAFT').toUpperCase(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -679,14 +708,25 @@ async function tryInitDatabase(providedPool = null) {
         mathematics INTEGER NULL,
         english INTEGER NULL,
         science INTEGER NULL,
+        marathi INTEGER NULL,
+        maths INTEGER NULL,
+        evs_science INTEGER NULL,
+        social_science INTEGER NULL,
+        logical_reasoning INTEGER NULL,
         total_marks INTEGER NOT NULL DEFAULT 0,
         percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
-        result_status VARCHAR(20) NOT NULL DEFAULT 'FAIL',
+        result_status VARCHAR(20) NOT NULL DEFAULT '',
         status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    for (const column of ['marathi', 'maths', 'evs_science', 'social_science', 'logical_reasoning']) {
+      try {
+        await connectionPool.query(`ALTER TABLE student_results ADD COLUMN IF NOT EXISTS ${column} INTEGER NULL;`);
+      } catch (e) {}
+    }
 
     await connectionPool.query(`
       INSERT INTO admin_users (username, password)
@@ -794,44 +834,38 @@ function createServer(options = {}) {
     const students = await getAllStudents();
     const rows = (students || []).map(student => {
       const fullName = String(buildStudentFullName(student) || '').trim();
-      const names = fullName ? fullName.split(/\s+/) : [];
-      const firstName = names[0] || '';
-      const middleName = names.slice(1, -1).join(' ');
-      const lastName = names.slice(-1)[0] || '';
 
       return {
         'Registration No': student.reg_no || student.regNo || '',
-        'First Name': firstName,
-        'Middle Name': middleName,
-        'Last Name': lastName,
+        'Student Name': fullName,
         'School Name': student.school_name || student.schoolName || '',
         'Standard': student.student_class || student.class || '',
         'Medium': student.medium || '',
         'Payment Mode': student.pay_mode || student.payMode || '',
-        'Mathematics': '',
+        'Marathi': '',
         'English': '',
-        'Science': '',
+        'Maths': '',
+        'EVS / Science': '',
+        'Social Science': '',
+        'Logical Reasoning': '',
         'Total': '',
-        'Percentage': '',
-        'Result Status': ''
       };
     });
 
     const csvPayload = rows.length > 0 ? rows : [{
       'Registration No': '',
-      'First Name': '',
-      'Middle Name': '',
-      'Last Name': '',
+      'Student Name': '',
       'School Name': '',
       'Standard': '',
       'Medium': '',
       'Payment Mode': '',
-      'Mathematics': '',
+      'Marathi': '',
       'English': '',
-      'Science': '',
+      'Maths': '',
+      'EVS / Science': '',
+      'Social Science': '',
+      'Logical Reasoning': '',
       'Total': '',
-      'Percentage': '',
-      'Result Status': ''
     }];
 
     res.setHeader('Content-Type', 'text/csv');
@@ -915,33 +949,32 @@ function createServer(options = {}) {
         }
         seen.add(regNo);
 
-        const marks = getResultMarksFromInput(row);
-        const missingSubjects = RESULT_SUBJECTS.filter(subject => marks[subject.key] === null).map(subject => subject.label);
+        const studentClass = student.student_class || student.class || '';
+        const subjects = getResultSubjects(studentClass);
+        const marks = getResultMarksFromInput(row, studentClass);
+        const missingSubjects = subjects.filter(subject => marks[subject.key] === null).map(subject => subject.label);
         if (missingSubjects.length > 0) {
           errors.push({ row: i + 1, regNo, message: `Missing marks for: ${missingSubjects.join(', ')}` });
           continue;
         }
 
-        const invalidSubjects = RESULT_SUBJECTS.filter(subject => {
+        const invalidSubjects = subjects.filter(subject => {
           const value = marks[subject.key];
-          return value === null || value < 0 || value > 100;
+          return value === null || value < 0 || value > subject.maxMarks;
         }).map(subject => subject.label);
         if (invalidSubjects.length > 0) {
           errors.push({ row: i + 1, regNo, message: `Invalid marks for: ${invalidSubjects.join(', ')}` });
           continue;
         }
 
-        const summary = calculateResultSummary(marks);
+        const summary = calculateResultSummary(marks, studentClass);
         const resultRecord = {
           regNo,
           studentName: buildStudentFullName(student),
           schoolName: existingSchoolName,
-          mathematics: summary.mathematics,
-          english: summary.english,
-          science: summary.science,
+          className: studentClass,
+          ...marks,
           totalMarks: summary.totalMarks,
-          percentage: summary.percentage,
-          resultStatus: summary.resultStatus,
           status: 'DRAFT'
         };
         validResults.push(resultRecord);
@@ -966,8 +999,6 @@ function createServer(options = {}) {
 
       const summary = {
         total: stored.reduce((sum, item) => sum + Number(item.totalMarks || 0), 0),
-        pass: stored.filter(item => String(item.resultStatus || '').toUpperCase() === 'PASS').length,
-        fail: stored.filter(item => String(item.resultStatus || '').toUpperCase() === 'FAIL').length,
         uploaded: stored.length
       };
 
@@ -1072,7 +1103,8 @@ function createServer(options = {}) {
         return res.status(403).json({ success: false, message: 'Unauthorized access.' });
       }
 
-      const result = await getResultByRegNo(candidate.reg_no || candidate.regNo);
+      const candidateClass = candidate.student_class || candidate.class || '';
+      const result = await getResultByRegNo(candidate.reg_no || candidate.regNo, candidateClass);
       if (!result) {
         return res.json({
           success: true,
@@ -1120,12 +1152,15 @@ function createServer(options = {}) {
         result: {
           regNo: result.regNo,
           studentName: result.studentName,
-          mathematics: result.mathematics,
+          className: candidateClass,
+          marathi: result.marathi,
           english: result.english,
-          science: result.science,
+          maths: result.maths,
+          evs: result.evs,
+          evsScience: result.evsScience,
+          socialScience: result.socialScience,
+          logicalReasoning: result.logicalReasoning,
           totalMarks: result.totalMarks,
-          percentage: result.percentage,
-          resultStatus: result.resultStatus,
           status: result.status
         }
       });
