@@ -4,6 +4,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 const PDFDocument = require('pdfkit');
 const axios = require('axios');
+const { SUBJECT_GROUPS, normalizeResultHeader, getGroupForClass } = require('./result-subjects.js');
 
 // Load Hall Ticket configuration
 const hallTicketConfig = require('./hallTicketConfig.js');
@@ -16,21 +17,8 @@ if (!global.__resources) global.__resources = [];
 if (!global.__student_results) global.__student_results = [];
 
 const RESULT_FORMATS = {
-  junior: [
-    { key: 'marathi', label: 'Marathi', maxMarks: 40 },
-    { key: 'english', label: 'English', maxMarks: 40 },
-    { key: 'maths', label: 'Maths', maxMarks: 40 },
-    { key: 'evs', label: 'EVS', maxMarks: 40 },
-    { key: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 40 }
-  ],
-  senior: [
-    { key: 'marathi', label: 'Marathi', maxMarks: 30 },
-    { key: 'english', label: 'English', maxMarks: 30 },
-    { key: 'maths', label: 'Maths', maxMarks: 30 },
-    { key: 'evsScience', label: 'EVS / Science', maxMarks: 30 },
-    { key: 'socialScience', label: 'Social Science', maxMarks: 30 },
-    { key: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 50 }
-  ]
+  junior: SUBJECT_GROUPS.PRIMARY,
+  senior: SUBJECT_GROUPS.SECONDARY
 };
 
 const MAX_RESULT_TOTAL = 200;
@@ -268,19 +256,24 @@ function getClassNumber(value = '') {
 }
 
 function getResultSubjects(studentClass = '') {
-  return getClassNumber(studentClass) !== null && getClassNumber(studentClass) <= 4
-    ? RESULT_FORMATS.junior
-    : RESULT_FORMATS.senior;
+  return getGroupForClass(studentClass) === 'PRIMARY' ? RESULT_FORMATS.junior : RESULT_FORMATS.senior;
 }
 
 function getResultMarksFromInput(rawMarks = {}, studentClass = '') {
   const marks = {};
+  const group = getGroupForClass(studentClass);
   getResultSubjects(studentClass).forEach(subject => {
-    const aliases = [subject.key, subject.label, subject.label.toLowerCase()];
-    if (subject.key === 'evsScience') aliases.push('EVS', 'Science', 'EVS/Science', 'evs_science');
-    const directValue = aliases.map(alias => rawMarks[alias]).find(value => value !== undefined);
-    const parsed = toNumber(directValue);
-    marks[subject.key] = parsed !== null && parsed >= 0 && parsed <= subject.maxMarks ? parsed : null;
+    const entries = Object.entries(rawMarks || {});
+    const hasValue = value => value !== undefined && value !== null && String(value).trim() !== '';
+    let match = entries.find(([header, value]) => normalizeResultHeader(header) === subject.field && hasValue(value));
+    if (!match && subject.field === 'evs' && group === 'PRIMARY') {
+      match = entries.find(([header, value]) => normalizeResultHeader(header) === 'evs_science' && hasValue(value));
+    }
+    if (!match && subject.field === 'evs_science' && group === 'SECONDARY') {
+      match = entries.find(([header, value]) => normalizeResultHeader(header) === 'evs' && hasValue(value));
+    }
+    const parsed = toNumber(match ? match[1] : undefined);
+    marks[subject.apiKey] = parsed !== null && parsed >= 0 && parsed <= subject.maxMarks ? parsed : null;
   });
   return marks;
 }
@@ -290,7 +283,7 @@ function calculateResultSummary(rawMarks = {}, studentClass = '') {
   const marks = getResultMarksFromInput(rawMarks, studentClass);
   return {
     ...marks,
-    totalMarks: subjects.reduce((total, subject) => total + (marks[subject.key] ?? 0), 0)
+    totalMarks: subjects.reduce((total, subject) => total + (marks[subject.apiKey] ?? 0), 0)
   };
 }
 
@@ -301,7 +294,7 @@ function serializeResultRecord(row, studentClass = '') {
   const subjectMarks = {};
   subjects.forEach(subject => {
     const legacyValue = subject.key === 'maths' ? row.mathematics : subject.key === 'evsScience' ? row.science : undefined;
-    subjectMarks[subject.key] = toNumber(row[subject.key] ?? legacyValue);
+    subjectMarks[subject.apiKey] = toNumber(row[subject.apiKey] ?? legacyValue);
   });
   const status = String(row.status || 'DRAFT').toUpperCase();
 
@@ -345,11 +338,7 @@ function buildStudentFullName(student) {
 }
 
 function normalizeHeaderKey(value = '') {
-  return String(value || '')
-    .trim()
-    .replace(/\uFEFF/g, '')
-    .replace(/[^a-z0-9]+/gi, '')
-    .toLowerCase();
+  return normalizeResultHeader(value);
 }
 
 function getRowValue(row = {}, aliases = []) {
@@ -952,14 +941,14 @@ function createServer(options = {}) {
         const studentClass = student.student_class || student.class || '';
         const subjects = getResultSubjects(studentClass);
         const marks = getResultMarksFromInput(row, studentClass);
-        const missingSubjects = subjects.filter(subject => marks[subject.key] === null).map(subject => subject.label);
+        const missingSubjects = subjects.filter(subject => marks[subject.apiKey] === null).map(subject => subject.label);
         if (missingSubjects.length > 0) {
           errors.push({ row: i + 1, regNo, message: `Missing marks for: ${missingSubjects.join(', ')}` });
           continue;
         }
 
         const invalidSubjects = subjects.filter(subject => {
-          const value = marks[subject.key];
+          const value = marks[subject.apiKey];
           return value === null || value < 0 || value > subject.maxMarks;
         }).map(subject => subject.label);
         if (invalidSubjects.length > 0) {

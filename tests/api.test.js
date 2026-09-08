@@ -117,6 +117,12 @@ function createFakePool(customHandlers = {}) {
   return pool;
 }
 
+function parseGeneratedCsv(csvText) {
+  const lines = String(csvText).trim().split(/\r?\n/).map(line => line.split(',').map(value => value.replace(/^"|"$/g, '')));
+  const headers = lines.shift();
+  return lines.map(line => Object.fromEntries(headers.map((header, index) => [header, line[index] || ''])));
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
@@ -557,6 +563,56 @@ test('Result template and upload normalize Registration No headers and ignore bl
     assert.ok(!payload.errors.some(error => /Registration number is required/i.test(error.message || '')));
   } finally {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('Generated result template uploads primary and secondary students with class-specific EVS mapping', async () => {
+  const fakePool = createFakePool({
+    listStudents: [
+      { reg_no: 'IMTSE-30001', full_name: 'PRIMARY USER', student_class: 'III', school_name: 'PRIMARY SCHOOL' },
+      { reg_no: 'IMTSE-70001', full_name: 'SECONDARY USER', student_class: 'VII', school_name: 'SECONDARY SCHOOL' }
+    ]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const templateResponse = await fetch(`${baseUrl}/api/results/template`);
+    const templateCsv = await templateResponse.text();
+    const templateRows = parseGeneratedCsv(templateCsv);
+    const makeRow = (templateRow, values) => ({
+      ...templateRow,
+      ...Object.fromEntries(Object.entries(values).map(([header, value]) => [header, String(value)]))
+    });
+
+    const uploadResponse = await fetch(`${baseUrl}/api/results/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: [
+        makeRow(templateRows[0], {
+          'Registration No': 'IMTSE-30001', 'School Name': 'PRIMARY SCHOOL',
+          Marathi: 35, English: 36, Maths: 38, 'EVS / Science': 37, 'Logical Reasoning': 39
+        }),
+        makeRow(templateRows[1], {
+          'Registration No': 'IMTSE-70001', 'School Name': 'SECONDARY SCHOOL',
+          Marathi: 25, English: 28, Maths: 27, 'EVS / Science': 26, 'Social Science': 24, 'Logical Reasoning': 45
+        })
+      ] })
+    });
+
+    assert.equal(uploadResponse.status, 200);
+    const payload = await uploadResponse.json();
+    assert.equal(payload.validStudents, 2);
+    assert.equal(payload.results[0].totalMarks, 185);
+    assert.equal(payload.results[0].evs, 37);
+    assert.equal(payload.results[0].evsScience, undefined);
+    assert.equal(payload.results[1].totalMarks, 175);
+    assert.equal(payload.results[1].evsScience, 26);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
 });
 

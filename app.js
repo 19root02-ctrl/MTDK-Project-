@@ -1333,18 +1333,7 @@ function adminDownloadRegisteredStudentsExcel() {
 }
 
 function normalizeCsvHeaderName(value = '') {
-    const normalized = String(value)
-        .trim()
-        .toLowerCase()
-        .replace(/\uFEFF/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .replace(/_+/g, '_');
-
-    if (['registration_no', 'registration_number', 'reg_no', 'reg_number', 'regno'].includes(normalized)) {
-        return 'reg_no';
-    }
-    return normalized;
+    return window.resultSubjectMapping.normalizeResultHeader(value);
 }
 
 function parseCsvLine(line = '') {
@@ -1460,16 +1449,23 @@ async function handleResultExcelUpload(event) {
             }).filter(row => Object.values(row).some(value => String(value || '').trim() !== ''));
 
             const payload = {
-                results: resultRows.map(row => ({
-                    registrationNo: getValueByNormalizedHeader(row, ['Registration No', 'Registration Number', 'Reg No', 'Reg. No', 'reg_no', 'registrationno', 'regno']),
-                    marathi: Number(getValueByNormalizedHeader(row, ['Marathi']) || 0),
-                    english: Number(getValueByNormalizedHeader(row, ['English']) || 0),
-                    maths: Number(getValueByNormalizedHeader(row, ['Maths', 'Mathematics']) || 0),
-                    evsScience: Number(getValueByNormalizedHeader(row, ['EVS / Science', 'EVS', 'Science']) || 0),
-                    socialScience: Number(getValueByNormalizedHeader(row, ['Social Science']) || 0),
-                    logicalReasoning: Number(getValueByNormalizedHeader(row, ['Logical Reasoning']) || 0),
-                    schoolName: getValueByNormalizedHeader(row, ['School Name', 'schoolname']) || ''
-                }))
+                results: resultRows.map(row => {
+                    const normalizedRow = {};
+                    Object.entries(row).forEach(([header, value]) => {
+                        normalizedRow[normalizeCsvHeaderName(header)] = value;
+                    });
+                    return {
+                        registrationNo: normalizedRow.registration_no || '',
+                        marathi: normalizedRow.marathi,
+                        english: normalizedRow.english,
+                        maths: normalizedRow.maths,
+                        evs: normalizedRow.evs,
+                        evsScience: normalizedRow.evs_science,
+                        socialScience: normalizedRow.social_science,
+                        logicalReasoning: normalizedRow.logical_reasoning,
+                        schoolName: normalizedRow.school_name || ''
+                    };
+                })
             };
 
             const response = await fetch(`${API_BASE_URL}/api/results/upload`, {
