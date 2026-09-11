@@ -1,6 +1,78 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createServer } = require('../server');
+const { normalizeResultHeader } = require('../result-subjects');
+
+const adminHeaders = {
+  Authorization: `Basic ${Buffer.from('MTDK:MTDK@123').toString('base64')}`
+};
+
+test.beforeEach(() => {
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
+});
+
+test('Result headers normalize to the exact upload API contract', () => {
+  assert.deepEqual([
+    normalizeResultHeader('Marathi'),
+    normalizeResultHeader('English'),
+    normalizeResultHeader('Maths'),
+    normalizeResultHeader('EVS / Science'),
+    normalizeResultHeader('Social Science'),
+    normalizeResultHeader('Logical Reasoning')
+  ], ['marathi', 'english', 'maths', 'evsScience', 'socialScience', 'logicalReasoning']);
+});
+
+test('Global release controls require admin access and release Hall Tickets/results together', async () => {
+  const previousResults = global.__student_results;
+  global.__student_results = [
+    { reg_no: 'IMTSE-REL3', student_name: 'PRIMARY', className: 'III', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40, total_marks: 200, status: 'DRAFT' },
+    { reg_no: 'IMTSE-REL7', student_name: 'SECONDARY', className: 'VII', marathi: 30, english: 30, maths: 30, evsScience: 30, socialScience: 30, logicalReasoning: 50, total_marks: 200, status: 'VERIFIED' }
+  ];
+  const fakePool = createFakePool({
+    listStudents: [
+      { reg_no: 'IMTSE-REL3', full_name: 'PRIMARY', student_class: 'III', dob: '2014-08-15', school_name: 'SCHOOL' },
+      { reg_no: 'IMTSE-REL7', full_name: 'SECONDARY', student_class: 'VII', dob: '2014-08-16', school_name: 'SCHOOL' }
+    ]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const initial = await fetch(`${baseUrl}/api/admin/release-status`, { headers: adminHeaders });
+    assert.equal(initial.status, 200);
+    assert.deepEqual(await initial.json(), { hallTicketReleased: false, resultReleased: false });
+
+    const forbidden = await fetch(`${baseUrl}/api/admin/release/hall-ticket`, { method: 'POST' });
+    assert.equal(forbidden.status, 401);
+
+    const hallRelease = await fetch(`${baseUrl}/api/admin/release/hall-ticket`, { method: 'POST', headers: adminHeaders });
+    assert.equal(hallRelease.status, 200);
+    assert.equal((await hallRelease.json()).hallTicketReleased, true);
+
+    const blockedResultRelease = await fetch(`${baseUrl}/api/admin/release/result`, { method: 'POST', headers: adminHeaders });
+    assert.equal(blockedResultRelease.status, 409);
+
+    global.__student_results[0].status = 'VERIFIED';
+    const resultRelease = await fetch(`${baseUrl}/api/admin/release/result`, { method: 'POST', headers: adminHeaders });
+    assert.equal(resultRelease.status, 200);
+    const released = await resultRelease.json();
+    assert.equal(released.resultReleased, true);
+    assert.equal(global.__student_results.every(result => result.status === 'PUBLISHED'), true);
+
+    const ownResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-REL3&dob=2014-08-15`);
+    assert.equal((await ownResult.json()).result.regNo, 'IMTSE-REL3');
+    const otherResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-REL7&dob=2014-08-15`);
+    assert.equal(otherResult.status, 403);
+  } finally {
+    global.__student_results = previousResults;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
 
 /**
  * Creates a fake PostgreSQL-like pool that handles the SQL patterns used by the app.
@@ -303,8 +375,9 @@ test('POST /api/results/upload calculates a senior 200-mark total', async () => 
       })
     });
 
-    assert.equal(response.status, 200);
-    const payload = await response.json();
+    const responseText = await response.text();
+    assert.equal(response.status, 200, responseText);
+    const payload = JSON.parse(responseText);
     assert.equal(payload.validStudents, 1);
     assert.equal(payload.summary.total, 200);
     assert.equal(payload.results[0].totalMarks, 200);
@@ -352,6 +425,110 @@ test('POST /api/results/upload calculates a junior 200-mark total', async () => 
     assert.equal(payload.results[0].percentage, undefined);
     assert.equal(payload.results[0].resultStatus, undefined);
   } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Group-specific uploads reject wrong classes and validate zero, blank, and maximum marks', async () => {
+  const fakePool = createFakePool({
+    listStudents: [
+      { reg_no: 'IMTSE-GROUP3', full_name: 'PRIMARY TEST', student_class: 'III', school_name: 'GROUP SCHOOL' },
+      { reg_no: 'IMTSE-GROUP7', full_name: 'SECONDARY TEST', student_class: 'VII', school_name: 'GROUP SCHOOL' }
+    ]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  const post = (path, result) => fetch(`http://127.0.0.1:${server.address().port}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ results: [result] })
+  });
+
+  try {
+    const wrongPrimary = await post('/api/results/upload/primary', {
+      registrationNo: 'IMTSE-GROUP7', marathi: 30, english: 30, maths: 30,
+      evsScience: 30, socialScience: 30, logicalReasoning: 50
+    });
+    assert.equal(wrongPrimary.status, 400);
+    assert.match((await wrongPrimary.json()).errors[0].message, /does not belong to Classes 1–4/);
+
+    const wrongSecondary = await post('/api/results/upload/secondary', {
+      registrationNo: 'IMTSE-GROUP3', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40
+    });
+    assert.equal(wrongSecondary.status, 400);
+    assert.match((await wrongSecondary.json()).errors[0].message, /does not belong to Classes 5–10/);
+
+    const primaryValid = await post('/api/results/upload/primary', {
+      registrationNo: 'IMTSE-GROUP3', marathi: 0, english: 40, maths: 40, evs: 40, logicalReasoning: 40
+    });
+    assert.equal(primaryValid.status, 200);
+    assert.equal((await primaryValid.json()).results[0].totalMarks, 160);
+
+    const primaryTooHigh = await post('/api/results/upload/primary', {
+      registrationNo: 'IMTSE-GROUP3', marathi: 41, english: 40, maths: 40, evs: 40, logicalReasoning: 40
+    });
+    assert.equal(primaryTooHigh.status, 400);
+    assert.match((await primaryTooHigh.json()).errors[0].message, /Invalid marks for: Marathi/);
+
+    const primaryBlank = await post('/api/results/upload/primary', {
+      registrationNo: 'IMTSE-GROUP3', marathi: '', english: 40, maths: 40, evs: 40, logicalReasoning: 40
+    });
+    assert.equal(primaryBlank.status, 400);
+    assert.match((await primaryBlank.json()).errors[0].message, /Missing marks for: Marathi/);
+
+    const secondaryValid = await post('/api/results/upload/secondary', {
+      registrationNo: 'IMTSE-GROUP7', marathi: 30, english: 30, maths: 30,
+      evsScience: 30, socialScience: 30, logicalReasoning: 50
+    });
+    assert.equal(secondaryValid.status, 200);
+    assert.equal((await secondaryValid.json()).results[0].totalMarks, 200);
+
+    const secondaryTooHigh = await post('/api/results/upload/secondary', {
+      registrationNo: 'IMTSE-GROUP7', marathi: 31, english: 30, maths: 30,
+      evsScience: 30, socialScience: 30, logicalReasoning: 51
+    });
+    assert.equal(secondaryTooHigh.status, 400);
+    assert.match((await secondaryTooHigh.json()).errors[0].message, /Invalid marks for: Marathi, Logical Reasoning/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Primary and secondary results share storage and Publish All publishes both groups', async () => {
+  const previousResults = global.__student_results;
+  global.__student_results = [];
+  const fakePool = createFakePool({
+    listStudents: [
+      { reg_no: 'IMTSE-PUBLISH3', full_name: 'PRIMARY PUBLISH', student_class: 'III', school_name: 'PUBLISH SCHOOL' },
+      { reg_no: 'IMTSE-PUBLISH7', full_name: 'SECONDARY PUBLISH', student_class: 'VII', school_name: 'PUBLISH SCHOOL' }
+    ]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const upload = (group, result) => fetch(`${baseUrl}/api/results/upload/${group}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ results: [result] })
+    });
+    assert.equal((await upload('primary', { registrationNo: 'IMTSE-PUBLISH3', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40 })).status, 200);
+    assert.equal((await upload('secondary', { registrationNo: 'IMTSE-PUBLISH7', marathi: 30, english: 30, maths: 30, evsScience: 30, socialScience: 30, logicalReasoning: 50 })).status, 200);
+    assert.equal(global.__student_results.filter(result => result.status === 'DRAFT').length, 2);
+
+    for (const regNo of ['IMTSE-PUBLISH3', 'IMTSE-PUBLISH7']) {
+      assert.equal((await fetch(`${baseUrl}/api/results/${regNo}/verify`, { method: 'POST' })).status, 200);
+    }
+    const publishResponse = await fetch(`${baseUrl}/api/results/publish-all`, { method: 'POST' });
+    assert.equal(publishResponse.status, 200);
+    assert.equal((await publishResponse.json()).published, 2);
+    assert.equal(global.__student_results.every(result => result.status === 'PUBLISHED'), true);
+  } finally {
+    global.__student_results = previousResults;
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
 });
@@ -439,12 +616,19 @@ test('GET /api/students/export and /api/results/template include the school name
     assert.equal(studentsRes.status, 200);
     assert.match(await studentsRes.text(), /ABC School/i);
 
-    const templateRes = await fetch(`http://127.0.0.1:${port}/api/results/template`);
-    assert.equal(templateRes.status, 200);
-    const templateCsv = await templateRes.text();
+    const primaryTemplateRes = await fetch(`http://127.0.0.1:${port}/api/results/template/primary`);
+    assert.equal(primaryTemplateRes.status, 200);
+    const primaryTemplateCsv = await primaryTemplateRes.text();
+    assert.match(primaryTemplateCsv, /Registration No,Student Name,School Name,Standard,Medium,Payment Mode,Marathi,English,Maths,EVS,Logical Reasoning,Total/);
+    assert.match(primaryTemplateCsv, /IMTSE-10002/);
+    assert.doesNotMatch(primaryTemplateCsv, /IMTSE-10001/);
+
+    const secondaryTemplateRes = await fetch(`http://127.0.0.1:${port}/api/results/template/secondary`);
+    assert.equal(secondaryTemplateRes.status, 200);
+    const templateCsv = await secondaryTemplateRes.text();
     assert.match(templateCsv, /Registration No,Student Name,School Name,Standard,Medium,Payment Mode,Marathi,English,Maths,EVS \/ Science,Social Science,Logical Reasoning,Total/);
     assert.match(templateCsv, /IMTSE-10001/);
-    assert.match(templateCsv, /IMTSE-10002/);
+    assert.doesNotMatch(templateCsv, /IMTSE-10002/);
     assert.doesNotMatch(templateCsv, /Gender|Percentage|Result Status|PASS|FAIL/i);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
@@ -616,7 +800,57 @@ test('Generated result template uploads primary and secondary students with clas
   }
 });
 
+test('Exact IMTSE-62440 CSV fixture preserves marks and reports over-limit values as invalid', async () => {
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-62440',
+      full_name: 'EXACT CSV USER',
+      student_class: 'VII',
+      school_name: ''
+    }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const rows = parseGeneratedCsv(fs.readFileSync(path.join(__dirname, 'result_template_62440.csv'), 'utf8'));
+    const row = rows[0];
+    const canonicalRow = Object.fromEntries(Object.entries(row).map(([header, value]) => [normalizeResultHeader(header), value]));
+    assert.deepEqual(canonicalRow, {
+      registration_no: 'IMTSE-62440',
+      student_name: '',
+      school_name: '',
+      standard: '',
+      medium: '',
+      payment_mode: '',
+      marathi: '35',
+      english: '35',
+      maths: '36',
+      evsScience: '29',
+      socialScience: '28',
+      logicalReasoning: '27',
+      total: '192'
+    });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/results/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: [canonicalRow] })
+    });
+
+    const responseText = await response.text();
+    assert.equal(response.status, 400, responseText);
+    const payload = JSON.parse(responseText);
+    assert.match(payload.errors[0].message, /Invalid marks for: Marathi, English, Maths/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('GET /api/results/me opens only published results to the matched student', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: true, resultReleased: true };
   const previousResults = global.__student_results;
   global.__student_results = [
     {
@@ -699,6 +933,7 @@ test('GET /api/results/me opens only published results to the matched student', 
     assert.equal(publishedPayload.published, true);
     assert.equal(publishedPayload.result.regNo, 'IMTSE-10002');
   } finally {
+    global.__release_controls = previousReleaseState;
     global.__student_results = previousResults;
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
@@ -759,6 +994,8 @@ test('POST /api/students/:studentId/approve sends an approval email', async () =
 // ═══════════════════════════════════════════════════════════════════
 
 test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: true, resultReleased: false };
   const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const futureDay = String(futureDate.getDate()).padStart(2, '0');
   const futureMonth = String(futureDate.getMonth() + 1).padStart(2, '0');
@@ -781,12 +1018,15 @@ test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', asy
     assert.equal(payload.available, false);
     assert.match(payload.message, /Hall Ticket will be available/i);
   } finally {
+    global.__release_controls = previousReleaseState;
     delete process.env.HALL_TICKET_UNLOCK_DATE;
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
 
 test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: true, resultReleased: false };
   const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const pastDay = String(pastDate.getDate()).padStart(2, '0');
   const pastMonth = String(pastDate.getMonth() + 1).padStart(2, '0');
@@ -809,6 +1049,7 @@ test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date'
     assert.equal(payload.available, true);
     assert.match(payload.message, /Hall Ticket is available/i);
   } finally {
+    global.__release_controls = previousReleaseState;
     delete process.env.HALL_TICKET_UNLOCK_DATE;
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

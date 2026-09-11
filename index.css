@@ -428,6 +428,221 @@ button {
     margin: 18px 0;
 }
 
+.result-group-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.result-group-box {
+    min-height: 100%;
+    padding: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 12px 30px rgba(15, 43, 92, 0.08);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.result-group-box::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 4px;
+}
+
+.result-group-primary {
+    background: linear-gradient(145deg, #f8fbff 0%, #eef5ff 100%);
+}
+
+.result-group-primary::before {
+    background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
+.result-group-secondary {
+    background: linear-gradient(145deg, #fbfaff 0%, #f3f0ff 100%);
+}
+
+.result-group-secondary::before {
+    background: linear-gradient(90deg, #6366f1, #a78bfa);
+}
+
+.result-group-box:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 18px 36px rgba(15, 43, 92, 0.13);
+    border-color: rgba(99, 102, 241, 0.28);
+}
+
+.result-group-topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.result-group-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    color: #fff;
+}
+
+.result-group-primary .result-group-icon {
+    background: #2563eb;
+}
+
+.result-group-secondary .result-group-icon {
+    background: #6366f1;
+}
+
+.result-group-box h4 {
+    margin: 2px 0 0;
+    font-size: 1.45rem;
+    color: var(--color-primary);
+}
+
+.result-group-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.result-group-subtitle {
+    margin: -6px 0 2px;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+}
+
+.subject-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    min-height: 52px;
+}
+
+.subject-chip-list span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    color: #334155;
+    font-size: 0.74rem;
+    font-weight: 650;
+}
+
+.result-max-marks {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.result-max-marks strong {
+    color: var(--color-primary);
+    font-size: 1rem;
+}
+
+.result-template-button {
+    width: 100%;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--color-primary);
+    color: #fff;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
+}
+
+.result-template-button:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 16px rgba(15, 43, 92, 0.18);
+}
+
+.result-file-zone {
+    min-height: 112px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px;
+    border: 1.5px dashed rgba(37, 99, 235, 0.42);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.54);
+    color: var(--color-primary);
+    text-align: center;
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.result-group-secondary .result-file-zone {
+    border-color: rgba(99, 102, 241, 0.42);
+}
+
+.result-file-zone:hover {
+    background: rgba(255, 255, 255, 0.88);
+    border-color: currentColor;
+    transform: translateY(-1px);
+}
+
+.result-file-zone > svg {
+    width: 26px;
+    height: 26px;
+}
+
+.result-file-zone strong {
+    font-size: 0.9rem;
+}
+
+.result-file-zone small {
+    color: var(--color-text-muted);
+}
+
+.result-file-zone input[type="file"] {
+    width: 100%;
+    max-width: 100%;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.result-file-zone input[type="file"]::file-selector-button {
+    margin-right: 6px;
+    padding: 6px 9px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--color-primary);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
 .upload-box {
     border: 1px dashed var(--color-border);
     background: var(--color-bg-light);
@@ -447,6 +662,12 @@ button {
     color: var(--color-text-muted);
 }
 
+@media (max-width: 820px) {
+    .result-group-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .result-alert-box {
     margin-top: 12px;
     padding: 12px 14px;
@@ -454,6 +675,65 @@ button {
     border: 1px solid #fed7aa;
     color: #9a4d00;
     border-radius: var(--radius-sm);
+}
+
+.release-controls-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+}
+
+.release-control-card {
+    padding: 18px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-light);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.release-control-heading {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--color-primary);
+}
+
+.release-control-heading svg {
+    width: 20px;
+    height: 20px;
+    color: var(--color-accent);
+}
+
+.release-control-card p {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.88rem;
+}
+
+.release-status {
+    width: fit-content;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.release-status.not-released {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.release-status.released {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.release-control-card button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
 }
 
 .status-badge {

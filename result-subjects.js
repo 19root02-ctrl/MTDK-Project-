@@ -11,15 +11,15 @@
             { field: 'english', apiKey: 'english', label: 'English', maxMarks: 40 },
             { field: 'maths', apiKey: 'maths', label: 'Maths', maxMarks: 40 },
             { field: 'evs', apiKey: 'evs', label: 'EVS', maxMarks: 40 },
-            { field: 'logical_reasoning', apiKey: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 40 }
+            { field: 'logicalReasoning', apiKey: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 40 }
         ],
         SECONDARY: [
             { field: 'marathi', apiKey: 'marathi', label: 'Marathi', maxMarks: 30 },
             { field: 'english', apiKey: 'english', label: 'English', maxMarks: 30 },
             { field: 'maths', apiKey: 'maths', label: 'Maths', maxMarks: 30 },
-            { field: 'evs_science', apiKey: 'evsScience', label: 'EVS / Science', maxMarks: 30 },
-            { field: 'social_science', apiKey: 'socialScience', label: 'Social Science', maxMarks: 30 },
-            { field: 'logical_reasoning', apiKey: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 50 }
+            { field: 'evsScience', apiKey: 'evsScience', label: 'EVS / Science', maxMarks: 30 },
+            { field: 'socialScience', apiKey: 'socialScience', label: 'Social Science', maxMarks: 30 },
+            { field: 'logicalReasoning', apiKey: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 50 }
         ]
     };
 
@@ -36,11 +36,11 @@
             maths: 'maths',
             mathematics: 'maths',
             evs: 'evs',
-            science: 'evs_science',
-            evsscience: 'evs_science',
-            socialscience: 'social_science',
-            socialsciences: 'social_science',
-            logicalreasoning: 'logical_reasoning',
+            science: 'evsScience',
+            evsscience: 'evsScience',
+            socialscience: 'socialScience',
+            socialsciences: 'socialScience',
+            logicalreasoning: 'logicalReasoning',
             registrationno: 'registration_no',
             registrationnumber: 'registration_no',
             regno: 'registration_no',

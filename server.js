@@ -15,6 +15,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 if (!global.__students) global.__students = [];
 if (!global.__resources) global.__resources = [];
 if (!global.__student_results) global.__student_results = [];
+if (!global.__release_controls) global.__release_controls = { hallTicketReleased: false, resultReleased: false };
 
 const RESULT_FORMATS = {
   junior: SUBJECT_GROUPS.PRIMARY,
@@ -27,6 +28,72 @@ let connectionPool = null;
 let isDbConnected = false;
 let dbInitError = null;
 let injectedEmailTransporter = null;
+
+function getReleaseState() {
+  return {
+    hallTicketReleased: Boolean(global.__release_controls.hallTicketReleased),
+    resultReleased: Boolean(global.__release_controls.resultReleased)
+  };
+}
+
+async function readReleaseState() {
+  if (isDbConnected && connectionPool) {
+    try {
+      const result = await connectionPool.query('SELECT hall_ticket_released, result_released FROM release_controls WHERE id = 1 LIMIT 1');
+      const row = getQueryRows(result)[0];
+      if (row) {
+        global.__release_controls = {
+          hallTicketReleased: Boolean(row.hall_ticket_released),
+          resultReleased: Boolean(row.result_released)
+        };
+      }
+    } catch (error) {
+      console.error('Failed to read release controls:', error.message || error);
+    }
+  }
+  return getReleaseState();
+}
+
+async function updateReleaseState(changes) {
+  const nextState = { ...getReleaseState(), ...changes };
+  global.__release_controls = nextState;
+  if (isDbConnected && connectionPool) {
+    await connectionPool.query(`
+      INSERT INTO release_controls (id, hall_ticket_released, result_released, updated_at)
+      VALUES (1, $1, $2, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET hall_ticket_released = EXCLUDED.hall_ticket_released,
+                                      result_released = EXCLUDED.result_released,
+                                      updated_at = CURRENT_TIMESTAMP
+    `, [nextState.hallTicketReleased, nextState.resultReleased]);
+  }
+  return nextState;
+}
+
+async function requireAdminReleaseAccess(req, res, next) {
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.startsWith('Basic ')) {
+    return res.status(401).json({ error: 'Admin authentication is required.' });
+  }
+
+  let username = '';
+  let password = '';
+  try {
+    const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    username = separator >= 0 ? decoded.slice(0, separator) : '';
+    password = separator >= 0 ? decoded.slice(separator + 1) : '';
+  } catch (error) {}
+
+  let valid = username === (process.env.ADMIN_USERNAME || 'MTDK') && password === (process.env.ADMIN_PASSWORD || 'MTDK@123');
+  if (!valid && isDbConnected && connectionPool) {
+    try {
+      const result = await connectionPool.query('SELECT id FROM admin_users WHERE username = $1 AND password = $2 LIMIT 1', [username, password]);
+      valid = getQueryRows(result).length > 0;
+    } catch (error) {}
+  }
+  if (!valid) return res.status(403).json({ error: 'Admin authentication failed.' });
+  return next();
+}
 
 function getQueryRows(result) {
   if (!result) return [];
@@ -267,13 +334,13 @@ function getResultMarksFromInput(rawMarks = {}, studentClass = '') {
     const hasValue = value => value !== undefined && value !== null && String(value).trim() !== '';
     let match = entries.find(([header, value]) => normalizeResultHeader(header) === subject.field && hasValue(value));
     if (!match && subject.field === 'evs' && group === 'PRIMARY') {
-      match = entries.find(([header, value]) => normalizeResultHeader(header) === 'evs_science' && hasValue(value));
+      match = entries.find(([header, value]) => normalizeResultHeader(header) === 'evsScience' && hasValue(value));
     }
-    if (!match && subject.field === 'evs_science' && group === 'SECONDARY') {
+    if (!match && subject.field === 'evsScience' && group === 'SECONDARY') {
       match = entries.find(([header, value]) => normalizeResultHeader(header) === 'evs' && hasValue(value));
     }
     const parsed = toNumber(match ? match[1] : undefined);
-    marks[subject.apiKey] = parsed !== null && parsed >= 0 && parsed <= subject.maxMarks ? parsed : null;
+    marks[subject.apiKey] = parsed;
   });
   return marks;
 }
@@ -293,7 +360,7 @@ function serializeResultRecord(row, studentClass = '') {
   const subjects = getResultSubjects(resolvedClass);
   const subjectMarks = {};
   subjects.forEach(subject => {
-    const legacyValue = subject.key === 'maths' ? row.mathematics : subject.key === 'evsScience' ? row.science : undefined;
+    const legacyValue = subject.apiKey === 'maths' ? row.mathematics : subject.apiKey === 'evsScience' ? row.science : undefined;
     subjectMarks[subject.apiKey] = toNumber(row[subject.apiKey] ?? legacyValue);
   });
   const status = String(row.status || 'DRAFT').toUpperCase();
@@ -303,6 +370,7 @@ function serializeResultRecord(row, studentClass = '') {
     regNo: row.reg_no || row.regNo,
     studentName: row.student_name || row.studentName || '',
     className: resolvedClass,
+    resultGroup: row.result_group || row.resultGroup || getGroupForClass(resolvedClass),
     ...subjectMarks,
     totalMarks: Number(row.total_marks ?? 0),
     status,
@@ -407,12 +475,13 @@ async function createOrUpdateResultRecord(resultPayload) {
         Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
         Number(resultPayload.socialScience ?? 0),
         Number(resultPayload.logicalReasoning ?? 0),
+        String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
         String(resultPayload.status || 'DRAFT').toUpperCase()
       ];
 
       await connectionPool.query(`
-        INSERT INTO student_results (reg_no, student_name, mathematics, english, science, total_marks, marathi, maths, evs_science, social_science, logical_reasoning, percentage, result_status, status, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, '', $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO student_results (reg_no, student_name, mathematics, english, science, total_marks, marathi, maths, evs_science, social_science, logical_reasoning, result_group, percentage, result_status, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, '', $13, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (reg_no)
         DO UPDATE SET student_name = EXCLUDED.student_name,
                       mathematics = EXCLUDED.mathematics,
@@ -424,6 +493,7 @@ async function createOrUpdateResultRecord(resultPayload) {
                       evs_science = EXCLUDED.evs_science,
                       social_science = EXCLUDED.social_science,
                       logical_reasoning = EXCLUDED.logical_reasoning,
+                      result_group = EXCLUDED.result_group,
                       status = EXCLUDED.status,
                       updated_at = CURRENT_TIMESTAMP
       `, values);
@@ -448,6 +518,8 @@ async function createOrUpdateResultRecord(resultPayload) {
     evsScience: Number(resultPayload.evsScience ?? 0),
     socialScience: Number(resultPayload.socialScience ?? 0),
     logicalReasoning: Number(resultPayload.logicalReasoning ?? 0),
+    result_group: String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
+    resultGroup: String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
     total_marks: Number(resultPayload.totalMarks ?? 0),
     status: String(resultPayload.status || 'DRAFT').toUpperCase(),
     created_at: new Date().toISOString(),
@@ -702,6 +774,7 @@ async function tryInitDatabase(providedPool = null) {
         evs_science INTEGER NULL,
         social_science INTEGER NULL,
         logical_reasoning INTEGER NULL,
+        result_group VARCHAR(20) NOT NULL DEFAULT 'SECONDARY',
         total_marks INTEGER NOT NULL DEFAULT 0,
         percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
         result_status VARCHAR(20) NOT NULL DEFAULT '',
@@ -710,12 +783,27 @@ async function tryInitDatabase(providedPool = null) {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    await connectionPool.query(`
+      CREATE TABLE IF NOT EXISTS release_controls (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        hall_ticket_released BOOLEAN NOT NULL DEFAULT FALSE,
+        result_released BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await connectionPool.query(`
+      INSERT INTO release_controls (id) VALUES (1)
+      ON CONFLICT (id) DO NOTHING;
+    `);
 
     for (const column of ['marathi', 'maths', 'evs_science', 'social_science', 'logical_reasoning']) {
       try {
         await connectionPool.query(`ALTER TABLE student_results ADD COLUMN IF NOT EXISTS ${column} INTEGER NULL;`);
       } catch (e) {}
     }
+    try {
+      await connectionPool.query(`ALTER TABLE student_results ADD COLUMN IF NOT EXISTS result_group VARCHAR(20) NOT NULL DEFAULT 'SECONDARY';`);
+    } catch (e) {}
 
     await connectionPool.query(`
       INSERT INTO admin_users (username, password)
@@ -773,15 +861,58 @@ function createServer(options = {}) {
    * Check if Hall Ticket is available for download
    * Returns 403 if locked, 200 if available
    */
+  app.get('/api/admin/release-status', requireAdminReleaseAccess, async (_req, res) => {
+    res.json(await readReleaseState());
+  });
+
+  app.post('/api/admin/release/hall-ticket', requireAdminReleaseAccess, async (_req, res) => {
+    try {
+      const state = await updateReleaseState({ hallTicketReleased: true });
+      res.json({ success: true, ...state, message: 'Hall Tickets have been released successfully.' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to release Hall Tickets', details: error.message || String(error) });
+    }
+  });
+
+  app.post('/api/admin/release/result', requireAdminReleaseAccess, async (_req, res) => {
+    try {
+      let results = await getAllResults();
+      const memoryResults = global.__student_results || [];
+      if (memoryResults.length > 0 && results.length === 0) {
+        results = memoryResults.map(result => serializeResultRecord(result, result.className || result.standard || ''));
+      }
+      const unverified = results.filter(result => String(result.status || '').toUpperCase() === 'DRAFT');
+      if (unverified.length > 0) {
+        return res.status(409).json({ error: 'All results must be verified before release.', unverifiedCount: unverified.length });
+      }
+
+      if (isDbConnected && connectionPool) {
+        await connectionPool.query("UPDATE student_results SET status = 'PUBLISHED', updated_at = CURRENT_TIMESTAMP WHERE status = 'VERIFIED'");
+      }
+      (global.__student_results || []).forEach(result => {
+        if (String(result.status || '').toUpperCase() === 'VERIFIED') {
+          result.status = 'PUBLISHED';
+          result.updated_at = new Date().toISOString();
+        }
+      });
+
+      const state = await updateReleaseState({ resultReleased: true });
+      res.json({ success: true, ...state, message: 'Results have been released successfully to all students.' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to release results', details: error.message || String(error) });
+    }
+  });
+
   app.get('/api/hall-ticket/status', async (_req, res) => {
+    const releaseState = await readReleaseState();
     const isAvailable = hallTicketConfig.isHallTicketAvailable();
     const unlockDateDisplay = hallTicketConfig.getHallTicketUnlockDateDisplay();
-    
-    if (!isAvailable) {
+
+    if (!releaseState.hallTicketReleased || !isAvailable) {
       return res.status(403).json({
         success: false,
         available: false,
-        message: `Hall Ticket will be available on ${unlockDateDisplay}`,
+        message: releaseState.hallTicketReleased ? `Hall Ticket will be available on ${unlockDateDisplay}` : 'Hall Ticket has not been released yet.',
         unlockDate: unlockDateDisplay
       });
     }
@@ -819,48 +950,42 @@ function createServer(options = {}) {
     }
   });
 
-  app.get('/api/results/template', async (_req, res) => {
-    const students = await getAllStudents();
-    const rows = (students || []).map(student => {
-      const fullName = String(buildStudentFullName(student) || '').trim();
-
-      return {
+  function buildResultTemplateRows(students, group) {
+    const subjects = SUBJECT_GROUPS[group];
+    const subjectHeaders = subjects.map(subject => subject.label);
+    return (students || []).filter(student => getGroupForClass(student.student_class || student.class || '') === group).map(student => {
+      const row = {
         'Registration No': student.reg_no || student.regNo || '',
-        'Student Name': fullName,
+        'Student Name': buildStudentFullName(student),
         'School Name': student.school_name || student.schoolName || '',
         'Standard': student.student_class || student.class || '',
         'Medium': student.medium || '',
-        'Payment Mode': student.pay_mode || student.payMode || '',
-        'Marathi': '',
-        'English': '',
-        'Maths': '',
-        'EVS / Science': '',
-        'Social Science': '',
-        'Logical Reasoning': '',
-        'Total': '',
+        'Payment Mode': student.pay_mode || student.payMode || ''
       };
+      subjectHeaders.forEach(header => { row[header] = ''; });
+      row.Total = '';
+      return row;
     });
+  }
 
-    const csvPayload = rows.length > 0 ? rows : [{
-      'Registration No': '',
-      'Student Name': '',
-      'School Name': '',
-      'Standard': '',
-      'Medium': '',
-      'Payment Mode': '',
-      'Marathi': '',
-      'English': '',
-      'Maths': '',
-      'EVS / Science': '',
-      'Social Science': '',
-      'Logical Reasoning': '',
-      'Total': '',
-    }];
-
+  async function sendResultTemplate(res, group) {
+    const subjects = SUBJECT_GROUPS[group];
+    const students = await getAllStudents();
+    const rows = buildResultTemplateRows(students, group);
+    const emptyRow = {
+      'Registration No': '', 'Student Name': '', 'School Name': '', Standard: '', Medium: '', 'Payment Mode': ''
+    };
+    subjects.forEach(subject => { emptyRow[subject.label] = ''; });
+    emptyRow.Total = '';
+    const filename = group === 'PRIMARY' ? 'result_template_classes_1_to_4.csv' : 'result_template_classes_5_to_10.csv';
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="result_template.csv"');
-    res.send(toCsv(csvPayload));
-  });
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(toCsv(rows.length ? rows : [emptyRow]));
+  }
+
+  app.get('/api/results/template/primary', async (_req, res) => sendResultTemplate(res, 'PRIMARY'));
+  app.get('/api/results/template/secondary', async (_req, res) => sendResultTemplate(res, 'SECONDARY'));
+  app.get('/api/results/template', async (_req, res) => sendResultTemplate(res, 'SECONDARY'));
 
   app.get('/api/students/export', async (_req, res) => {
     try {
@@ -898,7 +1023,7 @@ function createServer(options = {}) {
     }
   });
 
-  app.post('/api/results/upload', async (req, res) => {
+  async function handleResultsUpload(req, res, expectedGroup = null) {
     try {
       const rawResults = Array.isArray(req.body && req.body.results) ? req.body.results : [];
       const students = await getAllStudents();
@@ -939,6 +1064,11 @@ function createServer(options = {}) {
         seen.add(regNo);
 
         const studentClass = student.student_class || student.class || '';
+        const actualGroup = getGroupForClass(studentClass);
+        if (expectedGroup && actualGroup !== expectedGroup) {
+          errors.push({ row: i + 1, regNo, message: `Student does not belong to ${expectedGroup === 'PRIMARY' ? 'Classes 1–4' : 'Classes 5–10'} group.` });
+          continue;
+        }
         const subjects = getResultSubjects(studentClass);
         const marks = getResultMarksFromInput(row, studentClass);
         const missingSubjects = subjects.filter(subject => marks[subject.apiKey] === null).map(subject => subject.label);
@@ -962,6 +1092,7 @@ function createServer(options = {}) {
           studentName: buildStudentFullName(student),
           schoolName: existingSchoolName,
           className: studentClass,
+          resultGroup: actualGroup,
           ...marks,
           totalMarks: summary.totalMarks,
           status: 'DRAFT'
@@ -1003,7 +1134,11 @@ function createServer(options = {}) {
       console.error('Failed to import results:', error);
       res.status(500).json({ error: 'Failed to upload results', details: error.message || String(error) });
     }
-  });
+  }
+
+  app.post('/api/results/upload', (req, res) => handleResultsUpload(req, res));
+  app.post('/api/results/upload/primary', (req, res) => handleResultsUpload(req, res, 'PRIMARY'));
+  app.post('/api/results/upload/secondary', (req, res) => handleResultsUpload(req, res, 'SECONDARY'));
 
   app.get('/api/results', async (_req, res) => {
     try {
@@ -1058,6 +1193,30 @@ function createServer(options = {}) {
     }
   });
 
+  app.post('/api/results/publish-all', async (_req, res) => {
+    try {
+      let published = 0;
+      if (isDbConnected && connectionPool) {
+        const result = await connectionPool.query(
+          "UPDATE student_results SET status = 'PUBLISHED', updated_at = CURRENT_TIMESTAMP WHERE status = 'VERIFIED'"
+        );
+        published = Number(result.rowCount || 0);
+      }
+      let memoryPublished = 0;
+      (global.__student_results || []).forEach(item => {
+        if (String(item.status || '').toUpperCase() === 'VERIFIED') {
+          item.status = 'PUBLISHED';
+          item.updated_at = new Date().toISOString();
+          memoryPublished += 1;
+        }
+      });
+      if (!isDbConnected || published === 0) published = memoryPublished;
+      res.json({ success: true, published, message: 'All verified results published successfully.' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to publish all results', details: error.message || String(error) });
+    }
+  });
+
   app.post('/api/results/:resultId/reopen', async (req, res) => {
     try {
       const param = String(req.params.resultId || '').trim();
@@ -1090,6 +1249,23 @@ function createServer(options = {}) {
 
       if (!candidate) {
         return res.status(403).json({ success: false, message: 'Unauthorized access.' });
+      }
+
+      const releaseState = await readReleaseState();
+      if (!releaseState.resultReleased) {
+        return res.json({
+          success: true,
+          published: false,
+          message: 'Result is not released yet.',
+          student: {
+            regNo: candidate.reg_no || candidate.regNo,
+            name: buildStudentFullName(candidate),
+            className: candidate.student_class || candidate.class,
+            medium: candidate.medium,
+            status: candidate.status
+          },
+          result: null
+        });
       }
 
       const candidateClass = candidate.student_class || candidate.class || '';

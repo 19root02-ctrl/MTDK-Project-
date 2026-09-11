@@ -966,6 +966,7 @@
                             <button type="button" class="panel-toggle active" onclick="showAdminPanel('students')">Student Profiles</button>
                             <button type="button" class="panel-toggle" onclick="showAdminPanel('resources')">Study Resources</button>
                             <button type="button" class="panel-toggle" onclick="showAdminPanel('results')">Result Management</button>
+                            <button type="button" class="panel-toggle" onclick="showAdminPanel('release')">Exam Release Controls</button>
                         </div>
                         <button class="btn-secondary" onclick="logoutAdmin()">Lock Panel</button>
                     </div>
@@ -1149,6 +1150,29 @@
                             </div>
                         </section>
 
+                        <section id="adminReleasePanel" class="admin-card admin-panel-section hidden">
+                            <div class="admin-card-header">
+                                <div>
+                                    <h3>Exam Release Controls</h3>
+                                    <p>Release Hall Tickets and verified exam results globally.</p>
+                                </div>
+                            </div>
+                            <div class="release-controls-grid">
+                                <div class="release-control-card">
+                                    <div class="release-control-heading"><i data-lucide="ticket"></i><strong>Hall Ticket</strong></div>
+                                    <p>Release availability for all eligible students.</p>
+                                    <span id="hallTicketReleaseStatus" class="release-status not-released">Not Released</span>
+                                    <button id="releaseHallTicketButton" type="button" class="btn-primary" onclick="releaseHallTickets()">Release Hall Ticket</button>
+                                </div>
+                                <div class="release-control-card">
+                                    <div class="release-control-heading"><i data-lucide="bar-chart-3"></i><strong>Exam Result</strong></div>
+                                    <p>Release all verified results for every class group.</p>
+                                    <span id="resultReleaseStatus" class="release-status not-released">Not Released</span>
+                                    <button id="releaseResultButton" type="button" class="btn-primary" onclick="releaseExamResults()">Release Result</button>
+                                </div>
+                            </div>
+                        </section>
+
                         <section id="adminResultPanel" class="admin-card admin-panel-section hidden">
                             <div class="admin-card-header">
                                 <div>
@@ -1157,17 +1181,52 @@
                                 </div>
                                 <div class="result-toolbar-actions">
                                     <button type="button" class="btn-secondary" onclick="adminDownloadRegisteredStudentsExcel()">Download Registered Students Excel</button>
-                                    <button type="button" class="btn-secondary" onclick="adminDownloadResultTemplate()">Download Result Template</button>
+                                    <button type="button" class="btn-primary" onclick="publishAllResults()">Publish All Results</button>
                                 </div>
                             </div>
 
                             <div class="result-summary-grid" id="resultSummaryGrid"></div>
 
                             <div class="result-upload-panel">
-                                <div class="upload-box">
-                                    <label for="resultExcelInput">Upload Result Excel</label>
-                                    <input type="file" id="resultExcelInput" accept=".csv,.xls,.xlsx" onchange="handleResultExcelUpload(event)">
-                                    <small>Use the downloaded template and enter only the marks for the registered students.</small>
+                                <div class="result-group-grid">
+                                    <div class="result-group-box result-group-primary">
+                                        <div class="result-group-topline">
+                                            <div class="result-group-icon"><i data-lucide="graduation-cap"></i></div>
+                                            <span class="result-group-label">Primary Group</span>
+                                        </div>
+                                        <h4>Classes 1–4</h4>
+                                        <p class="result-group-subtitle">Result Upload &amp; Management</p>
+                                        <div class="subject-chip-list" aria-label="Primary subjects">
+                                            <span>Marathi</span><span>English</span><span>Maths</span><span>EVS</span><span>Logical Reasoning</span>
+                                        </div>
+                                        <div class="result-max-marks"><span>Maximum Marks</span><strong>200</strong></div>
+                                        <button type="button" class="result-template-button" onclick="adminDownloadResultTemplate('primary')"><i data-lucide="download"></i><span>Download Classes 1–4 Template</span></button>
+                                        <label class="result-file-zone" for="primaryResultExcelInput">
+                                            <i data-lucide="upload-cloud"></i>
+                                            <strong>Upload Filled Excel</strong>
+                                            <small>Drag &amp; drop your Excel file or browse</small>
+                                            <input type="file" id="primaryResultExcelInput" accept=".csv,.xls,.xlsx" onchange="handleResultExcelUpload(event, 'primary')">
+                                        </label>
+                                    </div>
+                                    <div class="result-group-box result-group-secondary">
+                                        <div class="result-group-topline">
+                                            <div class="result-group-icon"><i data-lucide="book-open"></i></div>
+                                            <span class="result-group-label">Secondary Group</span>
+                                        </div>
+                                        <h4>Classes 5–10</h4>
+                                        <p class="result-group-subtitle">Result Upload &amp; Management</p>
+                                        <div class="subject-chip-list" aria-label="Secondary subjects">
+                                            <span>Marathi</span><span>English</span><span>Maths</span><span>EVS / Science</span><span>Social Science</span><span>Logical Reasoning</span>
+                                        </div>
+                                        <div class="result-max-marks"><span>Maximum Marks</span><strong>200</strong></div>
+                                        <button type="button" class="result-template-button" onclick="adminDownloadResultTemplate('secondary')"><i data-lucide="download"></i><span>Download Classes 5–10 Template</span></button>
+                                        <label class="result-file-zone" for="secondaryResultExcelInput">
+                                            <i data-lucide="upload-cloud"></i>
+                                            <strong>Upload Filled Excel</strong>
+                                            <small>Drag &amp; drop your Excel file or browse</small>
+                                            <input type="file" id="secondaryResultExcelInput" accept=".csv,.xls,.xlsx" onchange="handleResultExcelUpload(event, 'secondary')">
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
 

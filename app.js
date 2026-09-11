@@ -83,6 +83,7 @@ const defaultStudent = {
 let dbStudents = [];
 let dbResources = [];
 let adminSession = false;
+let adminCredentials = null;
 let adminResultData = [];
 let resultPreviewData = [];
 const API_BASE_URL = window.location.origin;
@@ -1199,10 +1200,9 @@ function renderResultPreview(rows = []) {
     }
 
     previewWrapper.classList.remove('hidden');
-    const isJunior = resultPreviewData.every(result => /^(I|II|III|IV|1|2|3|4)(?:ST|ND|RD|TH)?\b/i.test(String(result.className || result.standard || '')));
     const previewHead = previewTable.parentElement?.querySelector('thead tr');
     if (previewHead) {
-        previewHead.innerHTML = ['Student', 'Reg No', 'School', 'Marathi', 'English', 'Maths', 'EVS / Science', ...(isJunior ? [] : ['Social Science']), 'Logical Reasoning', 'Total']
+        previewHead.innerHTML = ['Student', 'Reg No', 'School', 'Standard', 'Group', 'Marathi', 'English', 'Maths', 'EVS / Science', 'Social Science', 'Logical Reasoning', 'Total']
             .map(label => `<th>${label}</th>`).join('');
     }
     previewTable.innerHTML = resultPreviewData.map(result => `
@@ -1210,11 +1210,13 @@ function renderResultPreview(rows = []) {
             <td>${result.studentName || ''}</td>
             <td>${result.regNo || ''}</td>
             <td>${result.schoolName || ''}</td>
+            <td>${result.className || ''}</td>
+            <td>${result.resultGroup || (/^(I|II|III|IV|1|2|3|4)(?:ST|ND|RD|TH)?\b/i.test(String(result.className || '')) ? 'PRIMARY' : 'SECONDARY')}</td>
             <td>${Number(result.marathi ?? 0)}</td>
             <td>${Number(result.english ?? 0)}</td>
             <td>${Number(result.maths ?? 0)}</td>
             <td>${Number(result.evsScience ?? result.evs ?? 0)}</td>
-            ${isJunior ? '' : `<td>${Number(result.socialScience ?? 0)}</td>`}
+            <td>${result.socialScience === undefined ? '' : Number(result.socialScience)}</td>
             <td>${Number(result.logicalReasoning ?? 0)}</td>
             <td>${Number(result.totalMarks || 0)}</td>
         </tr>
@@ -1268,7 +1270,6 @@ function applyResultSchoolFilter() {
             <td><span class="status-badge ${String(result.status || '').toLowerCase()}">${result.status || 'DRAFT'}</span></td>
             <td>
                 ${String(result.status || '').toUpperCase() === 'DRAFT' ? `<button class="btn-secondary" type="button" onclick="verifyResultRow('${result.regNo || result.reg_no || ''}')">Verify</button>` : ''}
-                ${String(result.status || '').toUpperCase() === 'VERIFIED' ? `<button class="btn-secondary" type="button" onclick="publishResultRow('${result.regNo || result.reg_no || ''}')">Publish</button>` : ''}
                 ${String(result.status || '').toUpperCase() === 'PUBLISHED' ? `<button class="btn-secondary" type="button" onclick="reopenResultRow('${result.regNo || result.reg_no || ''}')">Reopen</button>` : ''}
             </td>
         </tr>
@@ -1296,6 +1297,19 @@ async function publishResultRow(regNo) {
         await loadResultSummary();
     } catch (error) {
         console.error('Failed to publish result', error);
+        alert('Result publication failed.');
+    }
+}
+
+async function publishAllResults() {
+    if (!confirm('Publish all verified results from Classes 1–4 and Classes 5–10?')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/publish-all`, { method: 'POST' });
+        if (!response.ok) throw new Error('Publish all failed');
+        await loadResultRows();
+        await loadResultSummary();
+    } catch (error) {
+        console.error('Failed to publish all results', error);
         alert('Result publication failed.');
     }
 }
@@ -1409,8 +1423,8 @@ function parseResultSpreadsheet(buffer) {
     return XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '', raw: false });
 }
 
-function adminDownloadResultTemplate() {
-    fetch(`${API_BASE_URL}/api/results/template`)
+function adminDownloadResultTemplate(group = 'secondary') {
+    fetch(`${API_BASE_URL}/api/results/template/${group}`)
         .then(async response => {
             if (!response.ok) throw new Error('Template fetch failed');
             const blob = await response.blob();
@@ -1429,7 +1443,7 @@ function adminDownloadResultTemplate() {
         });
 }
 
-async function handleResultExcelUpload(event) {
+async function handleResultExcelUpload(event, group = 'secondary') {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
 
@@ -1443,10 +1457,10 @@ async function handleResultExcelUpload(event) {
             const resultRows = rows.slice(1).map(line => {
                 const obj = {};
                 headers.forEach((header, index) => {
-                    obj[header] = String(line[index] || '').trim();
+                    obj[header] = String(line[index] ?? '').trim();
                 });
                 return obj;
-            }).filter(row => Object.values(row).some(value => String(value || '').trim() !== ''));
+            }).filter(row => Object.values(row).some(value => String(value ?? '').trim() !== ''));
 
             const payload = {
                 results: resultRows.map(row => {
@@ -1460,15 +1474,15 @@ async function handleResultExcelUpload(event) {
                         english: normalizedRow.english,
                         maths: normalizedRow.maths,
                         evs: normalizedRow.evs,
-                        evsScience: normalizedRow.evs_science,
-                        socialScience: normalizedRow.social_science,
-                        logicalReasoning: normalizedRow.logical_reasoning,
+                        evsScience: normalizedRow.evsScience,
+                        socialScience: normalizedRow.socialScience,
+                        logicalReasoning: normalizedRow.logicalReasoning,
                         schoolName: normalizedRow.school_name || ''
                     };
                 })
             };
 
-            const response = await fetch(`${API_BASE_URL}/api/results/upload`, {
+            const response = await fetch(`${API_BASE_URL}/api/results/upload/${group}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -2079,17 +2093,19 @@ function resetAdminResourceForm() {
 function showAdminPanel(panelName) {
     const studentPanel = document.getElementById("adminStudentPanel");
     const resourcePanel = document.getElementById("adminResourcePanel");
+    const releasePanel = document.getElementById("adminReleasePanel");
     const resultPanel = document.getElementById("adminResultPanel");
     const buttons = document.querySelectorAll(".panel-toggle");
 
-    const visiblePanel = panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : studentPanel;
-    const hiddenPanels = [studentPanel, resourcePanel, resultPanel].filter(panel => panel && panel !== visiblePanel);
+    const visiblePanel = panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : panelName === 'release' ? releasePanel : studentPanel;
+    const hiddenPanels = [studentPanel, resourcePanel, resultPanel, releasePanel].filter(panel => panel && panel !== visiblePanel);
 
     if (visiblePanel) visiblePanel.classList.remove('hidden');
     hiddenPanels.forEach(panel => panel && panel.classList.add('hidden'));
 
     buttons.forEach(button => {
-        const isActive = button.textContent.includes(panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : 'Student Profiles');
+        const label = panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : panelName === 'release' ? 'Exam Release Controls' : 'Student Profiles';
+        const isActive = button.textContent.includes(label);
         button.classList.toggle('active', isActive);
     });
 
@@ -2097,6 +2113,7 @@ function showAdminPanel(panelName) {
         loadResultSummary();
         loadResultRows();
     }
+    if (panelName === 'release') loadReleaseStatus();
 }
 
 function toggleResourceInputMode() {
@@ -2129,6 +2146,7 @@ function handleAdminLogin(event) {
     // Updated admin credentials: username 'MTDK', password 'MTDK@123'
     if (username === "MTDK" && password === "MTDK@123") {
         adminSession = true;
+        adminCredentials = { username, password };
         document.getElementById("adminAccessCard").classList.add("hidden");
         document.getElementById("adminPanelContent").classList.remove("hidden");
         alert("Admin panel unlocked.");
@@ -2139,9 +2157,66 @@ function handleAdminLogin(event) {
 
 function logoutAdmin() {
     adminSession = false;
+    adminCredentials = null;
     document.getElementById("adminPassword").value = "";
     document.getElementById("adminAccessCard").classList.remove("hidden");
     document.getElementById("adminPanelContent").classList.add("hidden");
+}
+
+function getAdminReleaseHeaders() {
+    if (!adminCredentials) return {};
+    return { Authorization: `Basic ${btoa(`${adminCredentials.username}:${adminCredentials.password}`)}` };
+}
+
+function updateReleaseStatusCard(elementId, released, buttonId, releasedLabel) {
+    const status = document.getElementById(elementId);
+    const button = document.getElementById(buttonId);
+    if (!status || !button) return;
+    status.textContent = released ? 'Released' : 'Not Released';
+    status.classList.toggle('released', released);
+    status.classList.toggle('not-released', !released);
+    button.textContent = released ? releasedLabel : buttonId === 'releaseHallTicketButton' ? 'Release Hall Ticket' : 'Release Result';
+    button.disabled = released;
+}
+
+async function loadReleaseStatus() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/release-status`, { headers: getAdminReleaseHeaders() });
+        if (!response.ok) return;
+        const data = await response.json();
+        updateReleaseStatusCard('hallTicketReleaseStatus', data.hallTicketReleased, 'releaseHallTicketButton', 'Hall Ticket Released');
+        updateReleaseStatusCard('resultReleaseStatus', data.resultReleased, 'releaseResultButton', 'Result Released');
+    } catch (error) {
+        console.warn('Could not load release status', error);
+    }
+}
+
+async function releaseHallTickets() {
+    if (!confirm('Are you sure you want to release Hall Tickets to all eligible students?')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/release/hall-ticket`, { method: 'POST', headers: getAdminReleaseHeaders() });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Hall Ticket release failed');
+        await loadReleaseStatus();
+        alert('Hall Tickets have been released successfully.');
+    } catch (error) {
+        console.error('Failed to release Hall Tickets', error);
+        alert(error.message || 'Hall Ticket release failed.');
+    }
+}
+
+async function releaseExamResults() {
+    if (!confirm('Are you sure you want to release the results to all students?')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/release/result`, { method: 'POST', headers: getAdminReleaseHeaders() });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Result release failed');
+        await loadReleaseStatus();
+        alert('Results have been released successfully to all students.');
+    } catch (error) {
+        console.error('Failed to release results', error);
+        alert(error.message || 'Result release failed.');
+    }
 }
 
 async function saveStudentFromAdmin(event) {

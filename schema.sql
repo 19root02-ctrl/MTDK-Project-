@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS student_results (
   evs_science INTEGER NULL,
   social_science INTEGER NULL,
   logical_reasoning INTEGER NULL,
+  result_group VARCHAR(20) NOT NULL DEFAULT 'SECONDARY',
   mathematics INTEGER NULL,
   science INTEGER NULL,
   total_marks INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +65,17 @@ CREATE TABLE IF NOT EXISTS student_results (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS release_controls (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  hall_ticket_released BOOLEAN NOT NULL DEFAULT FALSE,
+  result_released BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO release_controls (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 
 -- Resource form behavior:
 -- YouTube -> show URL field and require it
