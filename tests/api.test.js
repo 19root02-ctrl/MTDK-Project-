@@ -5,6 +5,7 @@ const path = require('node:path');
 const XLSX = require('xlsx');
 const { createServer } = require('../server');
 const { normalizeResultHeader } = require('../result-subjects');
+const { EXAM_DATE } = require('../hallTicketConfig');
 
 const adminHeaders = {
   Authorization: `Basic ${Buffer.from('MTDK:MTDK@123').toString('base64')}`
@@ -23,6 +24,10 @@ test('Result headers normalize to the exact upload API contract', () => {
     normalizeResultHeader('Social Science'),
     normalizeResultHeader('Logical Reasoning')
   ], ['marathi', 'english', 'maths', 'evsScience', 'socialScience', 'logicalReasoning']);
+});
+
+test('Exam countdown configuration targets 14 February 2027 in India time', () => {
+  assert.equal(EXAM_DATE, '2027-02-14T00:00:00+05:30');
 });
 
 test('Global release controls require admin access and release Hall Tickets/results together', async () => {
@@ -664,6 +669,8 @@ test('GET /api/students/export and /api/results/template include the school name
     assert.deepEqual(secondaryRows[0], ['Registration No', 'Student Name', 'School Name', 'Standard', 'Medium', 'Payment Mode', 'Marathi', 'English', 'Maths', 'EVS / Science', 'Social Science', 'Logical Reasoning', 'Total']);
     assert.equal(secondaryRows.some(row => row[0] === 'IMTSE-10001'), true);
     assert.equal(secondaryRows.some(row => row[0] === 'IMTSE-10002'), false);
+    const secondaryMarkIndexes = [6, 7, 8, 9, 10, 11, 12];
+    assert.equal(secondaryRows.slice(1).every(row => secondaryMarkIndexes.every(index => row[index] === '')), true);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
@@ -1165,7 +1172,7 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
     global.__release_controls.hallTicketReleased = true;
     const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
     assert.equal(afterRelease.status, 200);
-    assert.equal((await afterRelease.json()).examCenter, 'Matoshree Tanubai Dagadu Khade English School & Jr. College, Miraj');
+    assert.equal((await afterRelease.json()).examCenter, 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj');
   } finally {
     global.__release_controls = previousReleaseState;
     delete process.env.HALL_TICKET_UNLOCK_DATE;

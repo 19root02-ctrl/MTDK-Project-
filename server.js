@@ -24,7 +24,7 @@ const RESULT_FORMATS = {
 };
 
 const MAX_RESULT_TOTAL = 200;
-const FIXED_HALL_TICKET_EXAM_CENTER = 'Matoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
+const FIXED_HALL_TICKET_EXAM_CENTER = 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj';
 
 let connectionPool = null;
 let isDbConnected = false;
@@ -155,7 +155,7 @@ async function sendApprovalEmail(student) {
       <p style="color:#475569;font-size:14px;line-height:1.9;">
         Exam Date: <strong>14 February 2027</strong><br>
         Time: <strong>11:00 AM to 1:00 PM</strong><br>
-        Exam Centre: <strong>MTDK School</strong><br>
+        Exam Centre: <strong>Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj</strong><br>
         Admit Card Available From: <strong>${hallTicketConfig.getHallTicketUnlockDateDisplay()}</strong>
       </p>
       <p style="color:#475569;font-size:14px;">Your official registration PDF is attached to this email.</p>
@@ -638,7 +638,7 @@ async function generateRegistrationPdfBuffer(student) {
         ['Date of Registration', formatDateWithDay(student.reg_date || student.regDate || '')],
         ['Exam Date', '14 February 2027'],
         ['Exam Time', '11:00 AM to 1:00 PM'],
-        ['Exam Centre', 'MTDK School']
+        ['Exam Centre', 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj']
       ];
 
       const labelX = leftX + 12;
@@ -658,7 +658,7 @@ async function generateRegistrationPdfBuffer(student) {
       doc.roundedRect(leftX, noteTop, cardWidth, 88, 8).fill('#f8fafc');
       doc.fillColor('#334155').fontSize(10).font('Helvetica').text('Exam Date: 14 February 2027', leftX + 12, noteTop + 12);
       doc.text('Time: 11:00 AM to 1:00 PM', leftX + 12, noteTop + 28);
-      doc.text('Exam Centre: MTDK School', leftX + 12, noteTop + 44);
+      doc.text('Exam Centre: Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj', leftX + 12, noteTop + 44);
       doc.fillColor('#475569').fontSize(9).text('Please carry this admit card along with a valid photo ID on exam day.', leftX + 12, noteTop + 60, { width: cardWidth - 24 });
 
       doc.fillColor('#64748b').fontSize(8).text('Initiative by MTDK Shaikshnik Sankul', leftX, doc.page.height - 36, { align: 'center', width: cardWidth });
