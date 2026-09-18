@@ -1636,7 +1636,7 @@ function generateOfficialHallTicketHtml(student) {
     const studentClass = student.class ? `Class ${student.class} (${student.medium || 'English'} Medium)` : '';
     const schoolName = student.schoolName || '';
     const seatNo = getRollNoForStudent(student);
-    const examCentre = 'Atoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
+    const examCentre = 'Matoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
 
     return `<!DOCTYPE html>
 <html lang="en">

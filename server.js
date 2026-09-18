@@ -24,7 +24,7 @@ const RESULT_FORMATS = {
 };
 
 const MAX_RESULT_TOTAL = 200;
-const FIXED_HALL_TICKET_EXAM_CENTER = 'Atoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
+const FIXED_HALL_TICKET_EXAM_CENTER = 'Matoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
 
 let connectionPool = null;
 let isDbConnected = false;
@@ -57,7 +57,8 @@ async function readReleaseState() {
 }
 
 async function updateReleaseState(changes) {
-  const nextState = { ...getReleaseState(), ...changes };
+  const currentState = await readReleaseState();
+  const nextState = { ...currentState, ...changes };
   global.__release_controls = nextState;
   if (isDbConnected && connectionPool) {
     await connectionPool.query(`

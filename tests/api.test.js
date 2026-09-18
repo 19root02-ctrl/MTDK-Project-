@@ -75,6 +75,32 @@ test('Global release controls require admin access and release Hall Tickets/resu
   }
 });
 
+test('Persisted release state is the default source and controls remain independent', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: true, resultReleased: true };
+  const fakePool = createFakePool({
+    releaseState: { hall_ticket_released: false, result_released: false }
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const initial = await fetch(`${baseUrl}/api/admin/release-status`, { headers: adminHeaders });
+    assert.deepEqual(await initial.json(), { hallTicketReleased: false, resultReleased: false });
+
+    const releaseHallTicket = await fetch(`${baseUrl}/api/admin/release/hall-ticket`, { method: 'POST', headers: adminHeaders });
+    assert.equal(releaseHallTicket.status, 200);
+    const stateAfterHallTicket = await releaseHallTicket.json();
+    assert.deepEqual({ hallTicketReleased: stateAfterHallTicket.hallTicketReleased, resultReleased: stateAfterHallTicket.resultReleased }, { hallTicketReleased: true, resultReleased: false });
+  } finally {
+    global.__release_controls = previousReleaseState;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 /**
  * Creates a fake PostgreSQL-like pool that handles the SQL patterns used by the app.
  * This keeps the project test coverage aligned with the PostgreSQL migration while
@@ -89,6 +115,10 @@ function createFakePool(customHandlers = {}) {
 
       if (/SELECT\s+1/i.test(normalizedSql)) {
         return { rows: [{ '?column?': 1 }] };
+      }
+
+      if (/SELECT\s+hall_ticket_released,\s*result_released\s+FROM\s+release_controls/i.test(normalizedSql) && customHandlers.releaseState) {
+        return { rows: [customHandlers.releaseState] };
       }
 
       if (/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS/i.test(normalizedSql) || /ALTER\s+TABLE\s+students\s+ADD\s+COLUMN/i.test(normalizedSql)) {
@@ -1135,7 +1165,7 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
     global.__release_controls.hallTicketReleased = true;
     const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
     assert.equal(afterRelease.status, 200);
-    assert.equal((await afterRelease.json()).examCenter, 'Atoshree Tanubai Dagadu Khade English School & Jr. College, Miraj');
+    assert.equal((await afterRelease.json()).examCenter, 'Matoshree Tanubai Dagadu Khade English School & Jr. College, Miraj');
   } finally {
     global.__release_controls = previousReleaseState;
     delete process.env.HALL_TICKET_UNLOCK_DATE;
