@@ -4,6 +4,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 const PDFDocument = require('pdfkit');
 const axios = require('axios');
+const XLSX = require('xlsx');
 const { SUBJECT_GROUPS, normalizeResultHeader, getGroupForClass } = require('./result-subjects.js');
 
 // Load Hall Ticket configuration
@@ -23,6 +24,7 @@ const RESULT_FORMATS = {
 };
 
 const MAX_RESULT_TOTAL = 200;
+const FIXED_HALL_TICKET_EXAM_CENTER = 'Atoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
 
 let connectionPool = null;
 let isDbConnected = false;
@@ -345,6 +347,17 @@ function getResultMarksFromInput(rawMarks = {}, studentClass = '') {
   return marks;
 }
 
+function getRawResultMark(rawMarks = {}, subject, group) {
+  const entries = Object.entries(rawMarks || {});
+  const aliases = group === 'PRIMARY' && subject.field === 'evs'
+    ? ['evs', 'evsScience']
+    : group === 'SECONDARY' && subject.field === 'evsScience'
+      ? ['evsScience', 'evs']
+      : [subject.field];
+  const match = entries.find(([header]) => aliases.includes(normalizeResultHeader(header)));
+  return match ? String(match[1] ?? '').trim() : '';
+}
+
 function calculateResultSummary(rawMarks = {}, studentClass = '') {
   const subjects = getResultSubjects(studentClass);
   const marks = getResultMarksFromInput(rawMarks, studentClass);
@@ -360,8 +373,18 @@ function serializeResultRecord(row, studentClass = '') {
   const subjects = getResultSubjects(resolvedClass);
   const subjectMarks = {};
   subjects.forEach(subject => {
-    const legacyValue = subject.apiKey === 'maths' ? row.mathematics : subject.apiKey === 'evsScience' ? row.science : undefined;
-    subjectMarks[subject.apiKey] = toNumber(row[subject.apiKey] ?? legacyValue);
+    const databaseColumn = {
+      marathi: 'marathi',
+      english: 'english',
+      maths: 'maths',
+      evs: 'evs_science',
+      evsScience: 'evs_science',
+      socialScience: 'social_science',
+      logicalReasoning: 'logical_reasoning'
+    }[subject.apiKey];
+    const legacyValue = subject.apiKey === 'maths' ? row.mathematics : subject.apiKey === 'evs' || subject.apiKey === 'evsScience' ? row.science : undefined;
+    const storedValue = row[subject.apiKey] ?? row[databaseColumn] ?? legacyValue;
+    subjectMarks[subject.apiKey] = toNumber(storedValue);
   });
   const status = String(row.status || 'DRAFT').toUpperCase();
 
@@ -499,6 +522,7 @@ async function createOrUpdateResultRecord(resultPayload) {
       `, values);
     } catch (e) {
       console.error('Failed to upsert result in PostgreSQL DB:', e);
+      throw e;
     }
   }
 
@@ -925,6 +949,49 @@ function createServer(options = {}) {
     });
   });
 
+  app.get('/api/hall-ticket', async (req, res) => {
+    try {
+      const regNo = String(req.query.regNo || '').trim();
+      const dob = String(req.query.dob || '').trim();
+      if (!regNo || !dob) return res.status(400).json({ error: 'Registration number and DOB are required.' });
+
+      const students = await getAllStudents();
+      const candidate = (students || []).find(student => {
+        return String(student.reg_no || student.regNo || '').trim() === regNo
+          && normalizeDate(student.dob || student.DOB || '') === normalizeDate(dob);
+      });
+      if (!candidate) return res.status(403).json({ error: 'Unauthorized access.' });
+
+      const status = String(candidate.status || '').toLowerCase();
+      if (!status.includes('approved') && !status.includes('active')) {
+        return res.status(403).json({ error: 'Hall Ticket is available only to approved students.' });
+      }
+
+      const releaseState = await readReleaseState();
+      if (!releaseState.hallTicketReleased) {
+        return res.status(403).json({ available: false, error: 'Hall Ticket has not been released yet.' });
+      }
+      if (!hallTicketConfig.isHallTicketAvailable()) {
+        return res.status(403).json({ available: false, error: `Hall Ticket will be available on ${hallTicketConfig.getHallTicketUnlockDateDisplay()}.` });
+      }
+
+      return res.json({
+        available: true,
+        examCenter: FIXED_HALL_TICKET_EXAM_CENTER,
+        student: {
+          regNo: candidate.reg_no || candidate.regNo,
+          fullName: buildStudentFullName(candidate),
+          class: candidate.student_class || candidate.class || '',
+          medium: candidate.medium || '',
+          schoolName: candidate.school_name || candidate.schoolName || '',
+          dob: normalizeDate(candidate.dob || candidate.DOB || '')
+        }
+      });
+    } catch (error) {
+      return res.status(500).json({ error: 'Failed to authorize Hall Ticket access.', details: error.message || String(error) });
+    }
+  });
+
   const allowInMemoryFallback = process.env.ALLOW_IN_MEMORY_FALLBACK === 'true' || process.env.NODE_ENV === 'test';
 
   app.get('/api/results/summary', async (_req, res) => {
@@ -972,15 +1039,23 @@ function createServer(options = {}) {
     const subjects = SUBJECT_GROUPS[group];
     const students = await getAllStudents();
     const rows = buildResultTemplateRows(students, group);
+    const headers = [
+      'Registration No', 'Student Name', 'School Name', 'Standard', 'Medium', 'Payment Mode',
+      ...subjects.map(subject => subject.label), 'Total'
+    ];
     const emptyRow = {
       'Registration No': '', 'Student Name': '', 'School Name': '', Standard: '', Medium: '', 'Payment Mode': ''
     };
     subjects.forEach(subject => { emptyRow[subject.label] = ''; });
     emptyRow.Total = '';
-    const filename = group === 'PRIMARY' ? 'result_template_classes_1_to_4.csv' : 'result_template_classes_5_to_10.csv';
-    res.setHeader('Content-Type', 'text/csv');
+    const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [emptyRow], { header: headers });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Results');
+    const workbookBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const filename = group === 'PRIMARY' ? 'result_template_classes_1_to_4.xlsx' : 'result_template_classes_5_to_10.xlsx';
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(toCsv(rows.length ? rows : [emptyRow]));
+    res.send(workbookBuffer);
   }
 
   app.get('/api/results/template/primary', async (_req, res) => sendResultTemplate(res, 'PRIMARY'));
@@ -1071,16 +1146,20 @@ function createServer(options = {}) {
         }
         const subjects = getResultSubjects(studentClass);
         const marks = getResultMarksFromInput(row, studentClass);
-        const missingSubjects = subjects.filter(subject => marks[subject.apiKey] === null).map(subject => subject.label);
+        const group = getGroupForClass(studentClass);
+        const missingSubjects = subjects
+          .filter(subject => getRawResultMark(row, subject, group) === '')
+          .map(subject => subject.label);
         if (missingSubjects.length > 0) {
           errors.push({ row: i + 1, regNo, message: `Missing marks for: ${missingSubjects.join(', ')}` });
           continue;
         }
 
         const invalidSubjects = subjects.filter(subject => {
-          const value = marks[subject.apiKey];
-          return value === null || value < 0 || value > subject.maxMarks;
-        }).map(subject => subject.label);
+          const rawValue = getRawResultMark(row, subject, group);
+          const value = Number(rawValue);
+          return !Number.isFinite(value) || value < 0 || value > subject.maxMarks;
+        }).map(subject => `${subject.label}="${getRawResultMark(row, subject, group)}"`);
         if (invalidSubjects.length > 0) {
           errors.push({ row: i + 1, regNo, message: `Invalid marks for: ${invalidSubjects.join(', ')}` });
           continue;

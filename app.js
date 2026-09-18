@@ -1431,7 +1431,7 @@ function adminDownloadResultTemplate(group = 'secondary') {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'result_template.csv';
+            a.download = group === 'primary' ? 'result_template_classes_1_to_4.xlsx' : 'result_template_classes_5_to_10.xlsx';
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -1636,7 +1636,7 @@ function generateOfficialHallTicketHtml(student) {
     const studentClass = student.class ? `Class ${student.class} (${student.medium || 'English'} Medium)` : '';
     const schoolName = student.schoolName || '';
     const seatNo = getRollNoForStudent(student);
-    const examCentre = student.schoolName ? `${student.schoolName} / Miraj Centre` : 'Nearest Assigned Exam Centre';
+    const examCentre = 'Atoshree Tanubai Dagadu Khade English School & Jr. College, Miraj';
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1926,23 +1926,17 @@ function downloadHallTicket(eventOrStudent = null, studentOverride = null) {
         return;
     }
 
-    const hallTicketConfig = window.hallTicketConfig;
-    if (hallTicketConfig && !hallTicketConfig.isHallTicketAvailable(hallTicketConfig.HALL_TICKET_UNLOCK_DATE)) {
-        alert(`Hall Ticket will be available on ${hallTicketConfig.getHallTicketUnlockDateDisplay()}.`);
-        return;
-    }
-
-    // Check Hall Ticket availability via API
-    fetch('/api/hall-ticket/status')
+    const regNo = student.regNo || student.reg_no || '';
+    const dob = student.dob || '';
+    fetch(`/api/hall-ticket?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`)
         .then(response => {
-            if (response.status === 403) {
-                // Hall Ticket is locked
-                return response.json().then(data => {
-                    alert(data.message || "Hall Ticket is not yet available.");
-                });
-            } else if (response.ok) {
-                // Hall Ticket is available, generate it
-                const htmlContent = generateOfficialHallTicketHtml(student);
+            return response.json().then(data => {
+                if (!response.ok) throw new Error(data.error || data.message || 'Hall Ticket is not yet available.');
+                return data;
+            });
+        })
+        .then(data => {
+                const htmlContent = generateOfficialHallTicketHtml(data.student || student);
                 const win = window.open('', '_blank');
                 if (win) {
                     win.document.open();
@@ -1960,14 +1954,12 @@ function downloadHallTicket(eventOrStudent = null, studentOverride = null) {
                     a.click();
                     document.body.removeChild(a);
                 }
-            } else {
-                alert("Error checking Hall Ticket availability. Please try again.");
-            }
         })
         .catch(error => {
-            console.error('Failed to check Hall Ticket availability:', error);
-            alert("Error checking Hall Ticket availability. Please try again.");
-        });
+            console.error('Failed to authorize Hall Ticket access:', error);
+            alert(error.message || "Error checking Hall Ticket availability. Please try again.");
+        })
+        ;
 }
 
 function populateAdminCategoryOptions() {

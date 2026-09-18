@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const XLSX = require('xlsx');
 const { createServer } = require('../server');
 const { normalizeResultHeader } = require('../result-subjects');
 
@@ -491,7 +492,7 @@ test('Group-specific uploads reject wrong classes and validate zero, blank, and 
       evsScience: 30, socialScience: 30, logicalReasoning: 51
     });
     assert.equal(secondaryTooHigh.status, 400);
-    assert.match((await secondaryTooHigh.json()).errors[0].message, /Invalid marks for: Marathi, Logical Reasoning/);
+    assert.match((await secondaryTooHigh.json()).errors[0].message, /Invalid marks for: Marathi="31", Logical Reasoning="51"/);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
@@ -618,18 +619,21 @@ test('GET /api/students/export and /api/results/template include the school name
 
     const primaryTemplateRes = await fetch(`http://127.0.0.1:${port}/api/results/template/primary`);
     assert.equal(primaryTemplateRes.status, 200);
-    const primaryTemplateCsv = await primaryTemplateRes.text();
-    assert.match(primaryTemplateCsv, /Registration No,Student Name,School Name,Standard,Medium,Payment Mode,Marathi,English,Maths,EVS,Logical Reasoning,Total/);
-    assert.match(primaryTemplateCsv, /IMTSE-10002/);
-    assert.doesNotMatch(primaryTemplateCsv, /IMTSE-10001/);
+    assert.match(primaryTemplateRes.headers.get('content-type'), /spreadsheetml/);
+    const primaryWorkbook = XLSX.read(Buffer.from(await primaryTemplateRes.arrayBuffer()), { type: 'buffer' });
+    const primaryRows = XLSX.utils.sheet_to_json(primaryWorkbook.Sheets.Results, { header: 1, defval: '' });
+    assert.deepEqual(primaryRows[0], ['Registration No', 'Student Name', 'School Name', 'Standard', 'Medium', 'Payment Mode', 'Marathi', 'English', 'Maths', 'EVS', 'Logical Reasoning', 'Total']);
+    assert.equal(primaryRows.some(row => row[0] === 'IMTSE-10002'), true);
+    assert.equal(primaryRows.some(row => row[0] === 'IMTSE-10001'), false);
 
     const secondaryTemplateRes = await fetch(`http://127.0.0.1:${port}/api/results/template/secondary`);
     assert.equal(secondaryTemplateRes.status, 200);
-    const templateCsv = await secondaryTemplateRes.text();
-    assert.match(templateCsv, /Registration No,Student Name,School Name,Standard,Medium,Payment Mode,Marathi,English,Maths,EVS \/ Science,Social Science,Logical Reasoning,Total/);
-    assert.match(templateCsv, /IMTSE-10001/);
-    assert.doesNotMatch(templateCsv, /IMTSE-10002/);
-    assert.doesNotMatch(templateCsv, /Gender|Percentage|Result Status|PASS|FAIL/i);
+    assert.match(secondaryTemplateRes.headers.get('content-type'), /spreadsheetml/);
+    const secondaryWorkbook = XLSX.read(Buffer.from(await secondaryTemplateRes.arrayBuffer()), { type: 'buffer' });
+    const secondaryRows = XLSX.utils.sheet_to_json(secondaryWorkbook.Sheets.Results, { header: 1, defval: '' });
+    assert.deepEqual(secondaryRows[0], ['Registration No', 'Student Name', 'School Name', 'Standard', 'Medium', 'Payment Mode', 'Marathi', 'English', 'Maths', 'EVS / Science', 'Social Science', 'Logical Reasoning', 'Total']);
+    assert.equal(secondaryRows.some(row => row[0] === 'IMTSE-10001'), true);
+    assert.equal(secondaryRows.some(row => row[0] === 'IMTSE-10002'), false);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
@@ -721,10 +725,11 @@ test('Result template and upload normalize Registration No headers and ignore bl
     const port = server.address().port;
     const templateRes = await fetch(`http://127.0.0.1:${port}/api/results/template`);
     assert.equal(templateRes.status, 200);
-    const templateCsv = await templateRes.text();
-    assert.match(templateCsv, /Registration No/i);
-    assert.match(templateCsv, /IMTSE-34990/i);
-    assert.doesNotMatch(templateCsv, /Gender/i);
+    const templateWorkbook = XLSX.read(Buffer.from(await templateRes.arrayBuffer()), { type: 'buffer' });
+    const templateRows = XLSX.utils.sheet_to_json(templateWorkbook.Sheets.Results, { header: 1, defval: '' });
+    assert.equal(templateRows[0][0], 'Registration No');
+    assert.equal(templateRows.some(row => row[0] === 'IMTSE-34990'), true);
+    assert.equal(templateRows.flat().some(value => /Gender/i.test(String(value))), false);
 
     const uploadRes = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
       method: 'POST',
@@ -765,8 +770,9 @@ test('Generated result template uploads primary and secondary students with clas
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const templateResponse = await fetch(`${baseUrl}/api/results/template`);
-    const templateCsv = await templateResponse.text();
-    const templateRows = parseGeneratedCsv(templateCsv);
+    const templateWorkbook = XLSX.read(Buffer.from(await templateResponse.arrayBuffer()), { type: 'buffer' });
+    const templateMatrix = XLSX.utils.sheet_to_json(templateWorkbook.Sheets.Results, { header: 1, defval: '' });
+    const templateRows = templateMatrix.slice(1).map(values => Object.fromEntries(templateMatrix[0].map((header, index) => [header, values[index] || ''])));
     const makeRow = (templateRow, values) => ({
       ...templateRow,
       ...Object.fromEntries(Object.entries(values).map(([header, value]) => [header, String(value)]))
@@ -842,7 +848,7 @@ test('Exact IMTSE-62440 CSV fixture preserves marks and reports over-limit value
     const responseText = await response.text();
     assert.equal(response.status, 400, responseText);
     const payload = JSON.parse(responseText);
-    assert.match(payload.errors[0].message, /Invalid marks for: Marathi, English, Maths/);
+    assert.match(payload.errors[0].message, /Invalid marks for: Marathi="35", English="35", Maths="36"/);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
@@ -1104,6 +1110,66 @@ test('Hall Ticket API returns correct unlock date in response', async () => {
   } finally {
     delete process.env.HALL_TICKET_UNLOCK_DATE;
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('Hall Ticket access is blocked until global release and returns the fixed exam center after release', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
+  process.env.HALL_TICKET_UNLOCK_DATE = '01-01-2020 00:00 Asia/Kolkata';
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-HALL-1', full_name: 'HALL USER', student_class: 'VII', medium: 'English',
+      school_name: 'REGISTERED SCHOOL', dob: '2014-08-15', status: 'Approved & Active (Fees Paid)'
+    }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const beforeRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
+    assert.equal(beforeRelease.status, 403);
+    global.__release_controls.hallTicketReleased = true;
+    const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
+    assert.equal(afterRelease.status, 200);
+    assert.equal((await afterRelease.json()).examCenter, 'Atoshree Tanubai Dagadu Khade English School & Jr. College, Miraj');
+  } finally {
+    global.__release_controls = previousReleaseState;
+    delete process.env.HALL_TICKET_UNLOCK_DATE;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Student result readback maps PostgreSQL subject columns and preserves zero marks', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: false, resultReleased: true };
+  const previousResults = global.__student_results;
+  global.__student_results = [{
+    reg_no: 'IMTSE-RESULT-1', student_name: 'RESULT USER', marathi: 0, english: 30, maths: 29,
+    evs_science: 28, social_science: 27, logical_reasoning: 45, total_marks: 159, status: 'PUBLISHED'
+  }];
+  const fakePool = createFakePool({
+    listStudents: [{ reg_no: 'IMTSE-RESULT-1', full_name: 'RESULT USER', student_class: 'VII', medium: 'English', dob: '2014-08-15', status: 'Approved' }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/results/me?regNo=IMTSE-RESULT-1&dob=2014-08-15`);
+    assert.equal(response.status, 200);
+    const result = (await response.json()).result;
+    assert.deepEqual({ marathi: result.marathi, english: result.english, maths: result.maths, evsScience: result.evsScience, socialScience: result.socialScience, logicalReasoning: result.logicalReasoning, totalMarks: result.totalMarks }, {
+      marathi: 0, english: 30, maths: 29, evsScience: 28, socialScience: 27, logicalReasoning: 45, totalMarks: 159
+    });
+  } finally {
+    global.__release_controls = previousReleaseState;
+    global.__student_results = previousResults;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
 });
 
