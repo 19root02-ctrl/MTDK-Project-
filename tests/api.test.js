@@ -130,6 +130,14 @@ function createFakePool(customHandlers = {}) {
         return { rows: [] };
       }
 
+      if (/ALTER\s+TABLE\s+student_results\s+ADD\s+COLUMN/i.test(normalizedSql)) {
+        return { rows: [] };
+      }
+
+      if (/UPDATE\s+(students|student_results)\s+SET\s+.*released_at/i.test(normalizedSql)) {
+        return { rows: [], rowCount: 0 };
+      }
+
       if (/INSERT\s+INTO\s+admin_users/i.test(normalizedSql)) {
         return { rows: [] };
       }
@@ -905,7 +913,8 @@ test('GET /api/results/me opens only published results to the matched student', 
       total_marks: 255,
       percentage: 85,
       result_status: 'PASS',
-      status: 'DRAFT'
+      status: 'DRAFT',
+      result_released_at: '2026-09-18T00:00:00.000Z'
     },
     {
       reg_no: 'IMTSE-10002',
@@ -916,7 +925,8 @@ test('GET /api/results/me opens only published results to the matched student', 
       total_marks: 273,
       percentage: 91,
       result_status: 'PASS',
-      status: 'PUBLISHED'
+      status: 'PUBLISHED',
+      result_released_at: '2026-09-18T00:00:00.000Z'
     }
   ];
 
@@ -1157,7 +1167,8 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
   const fakePool = createFakePool({
     listStudents: [{
       reg_no: 'IMTSE-HALL-1', full_name: 'HALL USER', student_class: 'VII', medium: 'English',
-      school_name: 'REGISTERED SCHOOL', dob: '2014-08-15', status: 'Approved & Active (Fees Paid)'
+      school_name: 'REGISTERED SCHOOL', dob: '2014-08-15', status: 'Approved & Active (Fees Paid)',
+      hall_ticket_released_at: '2026-09-18T00:00:00.000Z'
     }]
   });
   const app = createServer({ pool: fakePool });
@@ -1172,7 +1183,7 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
     global.__release_controls.hallTicketReleased = true;
     const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
     assert.equal(afterRelease.status, 200);
-    assert.equal((await afterRelease.json()).examCenter, 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj');
+    assert.equal((await afterRelease.json()).examCenter, 'Matoshree Tanubai Dagadu Khade English School and Junior College, Sainandan Colony, Near Rama Udyan, Miraj');
   } finally {
     global.__release_controls = previousReleaseState;
     delete process.env.HALL_TICKET_UNLOCK_DATE;
@@ -1186,7 +1197,8 @@ test('Student result readback maps PostgreSQL subject columns and preserves zero
   const previousResults = global.__student_results;
   global.__student_results = [{
     reg_no: 'IMTSE-RESULT-1', student_name: 'RESULT USER', marathi: 0, english: 30, maths: 29,
-    evs_science: 28, social_science: 27, logical_reasoning: 45, total_marks: 159, status: 'PUBLISHED'
+    evs_science: 28, social_science: 27, logical_reasoning: 45, total_marks: 159, status: 'PUBLISHED',
+    result_released_at: '2026-09-18T00:00:00.000Z'
   }];
   const fakePool = createFakePool({
     listStudents: [{ reg_no: 'IMTSE-RESULT-1', full_name: 'RESULT USER', student_class: 'VII', medium: 'English', dob: '2014-08-15', status: 'Approved' }]

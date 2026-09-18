@@ -24,7 +24,7 @@ const RESULT_FORMATS = {
 };
 
 const MAX_RESULT_TOTAL = 200;
-const FIXED_HALL_TICKET_EXAM_CENTER = 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj';
+const FIXED_HALL_TICKET_EXAM_CENTER = 'Matoshree Tanubai Dagadu Khade English School and Junior College, Sainandan Colony, Near Rama Udyan, Miraj';
 
 let connectionPool = null;
 let isDbConnected = false;
@@ -400,6 +400,7 @@ function serializeResultRecord(row, studentClass = '') {
     status,
     verifiedAt: row.verified_at || null,
     publishedAt: row.published_at || null,
+    resultReleasedAt: row.result_released_at || row.resultReleasedAt || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
   };
@@ -800,6 +801,7 @@ async function tryInitDatabase(providedPool = null) {
         social_science INTEGER NULL,
         logical_reasoning INTEGER NULL,
         result_group VARCHAR(20) NOT NULL DEFAULT 'SECONDARY',
+          result_released_at TIMESTAMP NULL,
         total_marks INTEGER NOT NULL DEFAULT 0,
         percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
         result_status VARCHAR(20) NOT NULL DEFAULT '',
@@ -819,6 +821,28 @@ async function tryInitDatabase(providedPool = null) {
     await connectionPool.query(`
       INSERT INTO release_controls (id) VALUES (1)
       ON CONFLICT (id) DO NOTHING;
+    `);
+
+    await connectionPool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hall_ticket_released_at TIMESTAMP NULL;`);
+    await connectionPool.query(`ALTER TABLE student_results ADD COLUMN IF NOT EXISTS result_released_at TIMESTAMP NULL;`);
+    await connectionPool.query(`
+      UPDATE students
+      SET hall_ticket_released_at = controls.updated_at
+      FROM release_controls controls
+      WHERE controls.id = 1
+        AND controls.hall_ticket_released = TRUE
+        AND students.hall_ticket_released_at IS NULL
+        AND students.created_at <= controls.updated_at;
+    `);
+    await connectionPool.query(`
+      UPDATE student_results
+      SET result_released_at = controls.updated_at
+      FROM release_controls controls
+      WHERE controls.id = 1
+        AND controls.result_released = TRUE
+        AND student_results.result_released_at IS NULL
+        AND student_results.status = 'PUBLISHED'
+        AND student_results.created_at <= controls.updated_at;
     `);
 
     for (const column of ['marathi', 'maths', 'evs_science', 'social_science', 'logical_reasoning']) {
@@ -893,6 +917,20 @@ function createServer(options = {}) {
   app.post('/api/admin/release/hall-ticket', requireAdminReleaseAccess, async (_req, res) => {
     try {
       const state = await updateReleaseState({ hallTicketReleased: true });
+      if (isDbConnected && connectionPool) {
+        await connectionPool.query(`
+          UPDATE students
+          SET hall_ticket_released_at = CURRENT_TIMESTAMP
+          WHERE LOWER(status) LIKE '%approved%'
+             OR LOWER(status) LIKE '%active%'
+        `);
+      }
+      (global.__students || []).forEach(student => {
+        const status = String(student.status || '').toLowerCase();
+        if (status.includes('approved') || status.includes('active')) {
+          student.hallTicketReleasedAt = new Date().toISOString();
+        }
+      });
       res.json({ success: true, ...state, message: 'Hall Tickets have been released successfully.' });
     } catch (error) {
       res.status(500).json({ error: 'Failed to release Hall Tickets', details: error.message || String(error) });
@@ -913,11 +951,15 @@ function createServer(options = {}) {
 
       if (isDbConnected && connectionPool) {
         await connectionPool.query("UPDATE student_results SET status = 'PUBLISHED', updated_at = CURRENT_TIMESTAMP WHERE status = 'VERIFIED'");
+        await connectionPool.query("UPDATE student_results SET result_released_at = CURRENT_TIMESTAMP WHERE status = 'PUBLISHED' AND result_released_at IS NULL");
       }
       (global.__student_results || []).forEach(result => {
         if (String(result.status || '').toUpperCase() === 'VERIFIED') {
           result.status = 'PUBLISHED';
           result.updated_at = new Date().toISOString();
+        }
+        if (String(result.status || '').toUpperCase() === 'PUBLISHED' && !result.resultReleasedAt) {
+          result.resultReleasedAt = new Date().toISOString();
         }
       });
 
@@ -969,7 +1011,7 @@ function createServer(options = {}) {
       }
 
       const releaseState = await readReleaseState();
-      if (!releaseState.hallTicketReleased) {
+      if (!releaseState.hallTicketReleased || (!candidate.hall_ticket_released_at && !candidate.hallTicketReleasedAt)) {
         return res.status(403).json({ available: false, error: 'Hall Ticket has not been released yet.' });
       }
       if (!hallTicketConfig.isHallTicketAvailable()) {
@@ -1371,6 +1413,22 @@ function createServer(options = {}) {
           success: true,
           published: false,
           message: 'Result is not published yet.',
+          student: {
+            regNo: candidate.reg_no || candidate.regNo,
+            name: buildStudentFullName(candidate),
+            className: candidate.student_class || candidate.class,
+            medium: candidate.medium,
+            status: candidate.status
+          },
+          result: null
+        });
+      }
+
+      if (!result.resultReleasedAt && !result.result_released_at) {
+        return res.json({
+          success: true,
+          published: false,
+          message: 'Result is not released yet.',
           student: {
             regNo: candidate.reg_no || candidate.regNo,
             name: buildStudentFullName(candidate),

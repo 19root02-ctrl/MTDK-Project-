@@ -1638,7 +1638,7 @@ function generateOfficialHallTicketHtml(student) {
     const studentClass = student.class ? `Class ${student.class} (${student.medium || 'English'} Medium)` : '';
     const schoolName = student.schoolName || '';
     const seatNo = getRollNoForStudent(student);
-    const examCentre = 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj';
+    const examCentre = 'Matoshree Tanubai Dagadu Khade English School and Junior College, Sainandan Colony, Near Rama Udyan, Miraj';
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1895,7 +1895,7 @@ function generateOfficialHallTicketHtml(student) {
                         <div class="rule-row"><span class="rule-num">5.</span><span>उत्तरपत्रिकेवर आपले नाव व सीट क्रमांक योग्यरीत्या लिहावा.</span></div>
                     </td>
                     <td>
-                        <div class="rule-row"><span class="rule-num">6.</span><span>इतर विद्यार्थ्यांच्या उत्तरपत्रिकेकडे पाहणे तसेच कोणतीही अनुचित मदत घेणे किंवा देणे हा गुन्हा आहे.</span></div>
+                        <div class="rule-row"><span class="rule-num">6.</span><span>परीक्षेदरम्यान इतर विद्यार्थ्यांच्या उत्तरपत्रिकेकडे पाहणे, त्यातील उत्तरे पाहून लिहिणे किंवा कॉपी करणे हे परीक्षेतील गैरप्रकार असून, कायद्यानुसार दंडनीय गुन्हा आहे. अशा प्रकारचे कृत्य करणाऱ्या विद्यार्थ्यावर नियमानुसार कडक कारवाई केली जाईल.</span></div>
                         <div class="rule-row"><span class="rule-num">7.</span><span>परीक्षेदरम्यान कोणतीही अनुचित हालचाल केल्यास किंवा नियमांचे उल्लंघन केल्यास आपली परीक्षा रद्द केली जाऊ शकते.</span></div>
                         <div class="rule-row"><span class="rule-num">8.</span><span>प्रश्नपत्रिका मिळाल्यावर ती पूर्ण तपासावी. काही त्रुटी असल्यास त्वरित पर्यवेक्षकांना कळवावे.</span></div>
                         <div class="rule-row"><span class="rule-num">9.</span><span>परीक्षा संपल्यावर उत्तरपत्रिका व प्रश्नपत्रिका पर्यवेक्षकांकडे जमा करावी.</span></div>
@@ -2169,8 +2169,8 @@ function updateReleaseStatusCard(elementId, released, buttonId, releasedLabel) {
     status.textContent = released ? 'Released' : 'Not Released';
     status.classList.toggle('released', released);
     status.classList.toggle('not-released', !released);
-    button.textContent = released ? releasedLabel : buttonId === 'releaseHallTicketButton' ? 'Release Hall Ticket' : 'Release Result';
-    button.disabled = released;
+    button.textContent = buttonId === 'releaseHallTicketButton' ? 'Release Hall Ticket' : 'Release Result';
+    button.disabled = false;
 }
 
 async function loadReleaseStatus() {
