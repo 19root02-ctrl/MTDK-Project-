@@ -1763,7 +1763,7 @@ function createServer(options = {}) {
     res.json(global.__resources);
   });
 
-  app.post('/api/resources', async (req, res) => {
+  app.post('/api/resources', requireAdminReleaseAccess, async (req, res) => {
     const resource = req.body;
     resource.id = resource.id || Date.now();
     if (isDbConnected && connectionPool) {
@@ -1789,16 +1789,32 @@ function createServer(options = {}) {
     res.status(201).json({ id: resource.id, message: 'Resource saved successfully' });
   });
 
-  app.put('/api/resources/:id', async (req, res) => {
+  app.put('/api/resources/:id', requireAdminReleaseAccess, async (req, res) => {
     const resourceId = Number(req.params.id);
+    if (!Number.isInteger(resourceId) || resourceId < 1) {
+      return res.status(400).json({ error: 'Invalid resource ID.' });
+    }
     const resource = req.body;
     if (isDbConnected && connectionPool) {
       try {
-        await connectionPool.query(
-          `UPDATE study_resources SET title=$1, category=$2, resource_type=$3, url=$4, description=$5, file_name=$6, file_data=$7 WHERE id=$8`,
-          [resource.title, resource.category, resource.type, resource.url || '', resource.description || '', resource.fileName || '', resource.fileData || '', resourceId]
+        const existingResult = await connectionPool.query(`SELECT * FROM study_resources WHERE id = $1 LIMIT 1`, [resourceId]);
+        const existing = getQueryRows(existingResult)[0];
+        if (!existing) return res.status(404).json({ error: 'Resource not found.' });
+        const result = await connectionPool.query(
+          `UPDATE study_resources SET title=$1, category=$2, resource_type=$3, url=$4, description=$5, file_name=$6, file_data=$7 WHERE id=$8 RETURNING *`,
+          [resource.title, resource.category, resource.type,
+            resource.url === undefined ? existing.url : resource.url,
+            resource.description === undefined ? existing.description : resource.description,
+            resource.fileName === undefined ? existing.file_name : resource.fileName,
+            resource.fileData === undefined ? existing.file_data : resource.fileData, resourceId]
         );
-        return res.json({ id: resourceId, message: 'Resource updated successfully' });
+        if (!result || result.rowCount !== 1) return res.status(404).json({ error: 'Resource not found.' });
+        const updated = getQueryRows(result)[0];
+        return res.json({
+          id: updated.id, title: updated.title, category: updated.category, type: updated.resource_type,
+          url: updated.url, description: updated.description, fileName: updated.file_name,
+          fileData: updated.file_data, createdAt: updated.created_at
+        });
       } catch (e) {
         console.error('Failed to update resource in PostgreSQL:', e);
         if (!allowInMemoryFallback) {
@@ -1810,16 +1826,23 @@ function createServer(options = {}) {
       return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
     const idx = global.__resources.findIndex(r => r.id === resourceId);
-    if (idx !== -1) global.__resources[idx] = { ...global.__resources[idx], ...resource };
-    res.json({ id: resourceId, message: 'Resource updated successfully' });
+    if (idx === -1) return res.status(404).json({ error: 'Resource not found.' });
+    global.__resources[idx] = { ...global.__resources[idx], ...resource, id: resourceId };
+    res.json(global.__resources[idx]);
   });
 
-  app.delete('/api/resources/:id', async (req, res) => {
+  app.delete('/api/resources/:id', requireAdminReleaseAccess, async (req, res) => {
     const resourceId = Number(req.params.id);
+    if (!Number.isInteger(resourceId) || resourceId < 1) {
+      return res.status(400).json({ error: 'Invalid resource ID.' });
+    }
     if (isDbConnected && connectionPool) {
       try {
-        await connectionPool.query(`DELETE FROM study_resources WHERE id = $1`, [resourceId]);
-        return res.json({ id: resourceId, message: 'Resource deleted successfully' });
+        const result = await connectionPool.query(`DELETE FROM study_resources WHERE id = $1`, [resourceId]);
+        if (!result || result.rowCount !== 1) {
+          return res.status(404).json({ success: false, deleted: false, id: resourceId, error: 'Resource not found.' });
+        }
+        return res.json({ success: true, deleted: true, id: resourceId, message: 'Resource deleted successfully' });
       } catch (e) {
         console.error('Failed to delete resource in PostgreSQL:', e);
         if (!allowInMemoryFallback) {
@@ -1830,8 +1853,12 @@ function createServer(options = {}) {
     if (!allowInMemoryFallback) {
       return res.status(503).json({ error: 'Database unavailable', details: dbInitError ? dbInitError.message : 'PostgreSQL connection failed' });
     }
+    const initialLength = global.__resources.length;
     global.__resources = global.__resources.filter(r => r.id !== resourceId);
-    res.json({ id: resourceId, message: 'Resource deleted successfully' });
+    if (global.__resources.length === initialLength) {
+      return res.status(404).json({ success: false, deleted: false, id: resourceId, error: 'Resource not found.' });
+    }
+    res.json({ success: true, deleted: true, id: resourceId, message: 'Resource deleted successfully' });
   });
 
   return app;

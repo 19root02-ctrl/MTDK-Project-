@@ -235,7 +235,7 @@ async function loadResourcesFromDatabase() {
             throw new Error(`Resource fetch failed with status ${response.status}`);
         }
         const resources = await response.json();
-        if (Array.isArray(resources) && resources.length > 0) {
+        if (Array.isArray(resources)) {
             dbResources = resources;
             try {
                 localStorage.setItem("imtse_resources", JSON.stringify(dbResources));
@@ -255,7 +255,7 @@ async function saveResourceToDatabase(resourceData, existingId = null) {
     const method = existingId ? "PUT" : "POST";
     const response = await fetch(endpoint, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminReleaseHeaders() },
         body: JSON.stringify(resourceData)
     });
     if (!response.ok) {
@@ -266,11 +266,19 @@ async function saveResourceToDatabase(resourceData, existingId = null) {
 }
 
 async function deleteResourceFromDatabase(resourceId) {
-    const response = await fetch(`${API_BASE_URL}/api/resources/${encodeURIComponent(resourceId)}`, { method: "DELETE" });
+    const response = await fetch(`${API_BASE_URL}/api/resources/${encodeURIComponent(resourceId)}`, {
+        method: "DELETE",
+        headers: getAdminReleaseHeaders()
+    });
     if (!response.ok) {
-        throw new Error(`Resource deletion failed with status ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(errorText || `Resource deletion failed with status ${response.status}`);
     }
-    return response.json();
+    const result = await response.json();
+    if (result.success !== true || result.deleted !== true) {
+        throw new Error("The resource was not deleted from the database.");
+    }
+    return result;
 }
 
 // State Variables
@@ -2128,7 +2136,7 @@ function toggleResourceInputMode() {
         urlWrapper.classList.add("hidden");
         fileWrapper.classList.remove("hidden");
         urlInput.required = false;
-        fileInput.required = true;
+        fileInput.required = !document.getElementById("adminResourceId")?.value;
         urlInput.value = "";
     }
 }
@@ -2348,17 +2356,23 @@ async function saveResourceFromAdmin(event) {
     const resourceId = document.getElementById("adminResourceId").value;
     const resourceType = document.getElementById("resourceType").value;
     const fileInput = document.getElementById("resourceFile");
+    const existingResource = resourceId
+        ? dbResources.find(item => String(item.id) === String(resourceId))
+        : null;
     const resourceData = {
         title: document.getElementById("resourceTitle").value,
         category: document.getElementById("resourceCategory").value,
         type: resourceType,
-        url: document.getElementById("resourceUrl").value,
+        url: existingResource?.url || document.getElementById("resourceUrl").value,
         description: document.getElementById("resourceDescription").value,
-        fileName: "",
-        fileData: ""
+        fileName: existingResource?.fileName || "",
+        fileData: existingResource?.fileData || ""
     };
 
-    if (resourceType !== "YouTube" && fileInput && fileInput.files && fileInput.files[0]) {
+    if (resourceType === "YouTube") {
+        resourceData.fileName = "";
+        resourceData.fileData = "";
+    } else if (fileInput && fileInput.files && fileInput.files[0]) {
         const file = fileInput.files[0];
         resourceData.fileName = file.name;
         resourceData.fileData = await readFileAsDataUrl(file);
@@ -2373,15 +2387,7 @@ async function saveResourceFromAdmin(event) {
         alert("Resource saved successfully to database.");
     } catch (error) {
         console.error("Failed to save resource to database", error);
-        if (resourceId) {
-            mockDatabase.updateResource({ ...resourceData, id: Number(resourceId) });
-        } else {
-            mockDatabase.saveResource({ ...resourceData, id: Date.now() });
-        }
-        resetAdminResourceForm();
-        renderAdminResources();
-        renderStudentResources();
-        alert("Resource saved locally (database sync fallback).");
+        alert(error.message || "Could not save the resource to the database.");
     }
 }
 
@@ -2395,14 +2401,15 @@ function readFileAsDataUrl(file) {
 }
 
 function editResourceFromAdmin(resourceId) {
-    const resource = dbResources.find(item => item.id === resourceId);
+    const resource = dbResources.find(item => String(item.id) === String(resourceId));
     if (!resource) return;
     document.getElementById("adminResourceId").value = resource.id;
     document.getElementById("resourceTitle").value = resource.title;
     document.getElementById("resourceCategory").value = resource.category;
-    document.getElementById("resourceType").value = resource.type;
-    document.getElementById("resourceUrl").value = resource.url;
-    document.getElementById("resourceDescription").value = resource.description;
+    document.getElementById("resourceType").value = resource.type || "Other";
+    document.getElementById("resourceUrl").value = resource.url || "";
+    document.getElementById("resourceDescription").value = resource.description || "";
+    toggleResourceInputMode();
     scrollToSection("admin-view");
 }
 
@@ -2414,10 +2421,7 @@ async function deleteResourceFromAdmin(resourceId) {
             alert("Resource removed from database.");
         } catch (error) {
             console.error("Failed to delete resource from database", error);
-            mockDatabase.deleteResource(resourceId);
-            renderAdminResources();
-            renderStudentResources();
-            alert("Resource removed locally.");
+            alert(error.message || "Could not remove the resource from the database.");
         }
     }
 }

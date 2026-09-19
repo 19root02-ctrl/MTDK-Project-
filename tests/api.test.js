@@ -112,7 +112,9 @@ test('Persisted release state is the default source and controls remain independ
  * preserving the same route contracts and validation logic.
  */
 function createFakePool(customHandlers = {}) {
-  const state = {};
+  const state = {
+    resources: (customHandlers.resources || []).map(resource => ({ ...resource }))
+  };
 
   const pool = {
     query: async (sql, params) => {
@@ -143,7 +145,10 @@ function createFakePool(customHandlers = {}) {
       }
 
       if (/INSERT\s+INTO\s+study_resources/i.test(normalizedSql)) {
-        return { rows: [{ id: 1 }] };
+        const [title, category, resource_type, url, description, file_name, file_data] = params;
+        const id = state.resources.length ? Math.max(...state.resources.map(resource => resource.id)) + 1 : 1;
+        state.resources.push({ id, title, category, resource_type, url, description, file_name, file_data, created_at: new Date().toISOString() });
+        return { rows: [{ id }] };
       }
 
       if (/SELECT\s+reg_no\s+FROM\s+students\s+WHERE\s+whatsapp\s*=\s*\$1/i.test(normalizedSql)) {
@@ -209,20 +214,28 @@ function createFakePool(customHandlers = {}) {
         return { rows: [{ affectedRows: 1 }] };
       }
 
-      if (/INSERT\s+INTO\s+study_resources/i.test(normalizedSql)) {
-        return { rows: [{ id: 1 }] };
-      }
-
       if (/UPDATE\s+study_resources\s+SET/i.test(normalizedSql)) {
-        return { rows: [{ affectedRows: 1 }] };
+        const [title, category, resource_type, url, description, file_name, file_data, id] = params;
+        const resource = state.resources.find(item => item.id === id);
+        if (!resource) return { rows: [], rowCount: 0 };
+        Object.assign(resource, { title, category, resource_type, url, description, file_name, file_data });
+        return { rows: [{ ...resource }], rowCount: 1 };
       }
 
       if (/DELETE\s+FROM\s+study_resources/i.test(normalizedSql)) {
-        return { rows: [{ affectedRows: 1 }] };
+        const id = params[0];
+        const index = state.resources.findIndex(resource => resource.id === id);
+        if (index === -1) return { rows: [], rowCount: 0 };
+        state.resources.splice(index, 1);
+        return { rows: [], rowCount: 1 };
       }
 
       if (/SELECT\s+\*\s+FROM\s+study_resources/i.test(normalizedSql)) {
-        return { rows: [] };
+        if (/WHERE\s+id\s*=\s*\$1/i.test(normalizedSql)) {
+          const resource = state.resources.find(item => item.id === params[0]);
+          return { rows: resource ? [{ ...resource }] : [] };
+        }
+        return { rows: state.resources.map(resource => ({ ...resource })) };
       }
 
       return { rows: [] };
@@ -375,6 +388,146 @@ test('PUT /api/students/:studentId updates the student record in the database', 
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+
+test('PUT /api/resources/:id updates title, class, and type and persists the edit', async () => {
+  const fakePool = createFakePool({ resources: [{
+    id: 41,
+    title: 'Old title',
+    category: 'std-i-ii',
+    resource_type: 'PDF',
+    url: 'https://example.com/old.pdf',
+    description: 'Old description',
+    file_name: 'old.pdf',
+    file_data: 'data:application/pdf;base64,old'
+  }] });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/resources/41`, {
+      method: 'PUT',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Updated title', category: 'std-vii-viii', type: 'DOC', description: 'Updated description' })
+    });
+
+    assert.equal(response.status, 200);
+    const updated = await response.json();
+    assert.deepEqual({ title: updated.title, category: updated.category, type: updated.type }, {
+      title: 'Updated title', category: 'std-vii-viii', type: 'DOC'
+    });
+
+    const persisted = await fetch(`${baseUrl}/api/resources`);
+    assert.equal(persisted.status, 200);
+    const resources = await persisted.json();
+    assert.deepEqual(resources[0], {
+      id: 41,
+      title: 'Updated title',
+      category: 'std-vii-viii',
+      type: 'DOC',
+      url: 'https://example.com/old.pdf',
+      description: 'Updated description',
+      fileName: 'old.pdf',
+      fileData: 'data:application/pdf;base64,old'
+    });
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('PUT /api/resources/:id keeps the existing file when no replacement is uploaded', async () => {
+  const fakePool = createFakePool({ resources: [{
+    id: 42,
+    title: 'Worksheet',
+    category: 'std-iii-iv',
+    resource_type: 'PDF',
+    url: 'https://example.com/worksheet.pdf',
+    description: 'Keep this file',
+    file_name: 'worksheet.pdf',
+    file_data: 'data:application/pdf;base64,keep'
+  }] });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/resources/42`, {
+      method: 'PUT',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Renamed worksheet', category: 'std-iii-iv', type: 'PDF' })
+    });
+
+    assert.equal(response.status, 200);
+    const updated = await response.json();
+    assert.equal(updated.fileName, 'worksheet.pdf');
+    assert.equal(updated.fileData, 'data:application/pdf;base64,keep');
+    assert.equal(updated.url, 'https://example.com/worksheet.pdf');
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('DELETE /api/resources/:id returns an explicit success contract and persists removal', async () => {
+  const fakePool = createFakePool({ resources: [{
+    id: 43,
+    title: 'To remove',
+    category: 'std-v-vi',
+    resource_type: 'DOC',
+    url: '',
+    description: '',
+    file_name: 'remove.docx',
+    file_data: 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,remove'
+  }] });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/resources/43`, { method: 'DELETE', headers: adminHeaders });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      success: true,
+      deleted: true,
+      id: 43,
+      message: 'Resource deleted successfully'
+    });
+
+    const persisted = await fetch(`${baseUrl}/api/resources`);
+    assert.deepEqual(await persisted.json(), []);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('DELETE /api/resources/:id returns 404 and success false for a missing resource', async () => {
+  const fakePool = createFakePool();
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/resources/999`, {
+      method: 'DELETE',
+      headers: adminHeaders
+    });
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), {
+      success: false,
+      deleted: false,
+      id: 999,
+      error: 'Resource not found.'
+    });
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('POST /api/results/upload calculates a senior 200-mark total', async () => {
   const fakePool = createFakePool({
     selectStudent: {
