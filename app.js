@@ -1212,10 +1212,12 @@ function renderResultPreview(rows = []) {
     previewWrapper.classList.remove('hidden');
     const previewHead = previewTable.parentElement?.querySelector('thead tr');
     if (previewHead) {
-        previewHead.innerHTML = ['Student', 'Reg No', 'School', 'Standard', 'Group', 'Marathi', 'English', 'Maths', 'EVS / Science', 'Social Science', 'Logical Reasoning', 'Total']
+        previewHead.innerHTML = ['Student', 'Reg No', 'School', 'Standard', 'Group', 'Marathi', 'English', 'Maths & Logical Reasoning', 'EVS / Science', 'Social Science', 'Total']
             .map(label => `<th>${label}</th>`).join('');
     }
-    previewTable.innerHTML = resultPreviewData.map(result => `
+    previewTable.innerHTML = resultPreviewData.map(result => {
+        const combinedMarks = Number(result.mathsLogicalReasoning ?? result.maths ?? result.logicalReasoning ?? 0);
+        return `
         <tr>
             <td>${result.studentName || ''}</td>
             <td>${result.regNo || ''}</td>
@@ -1224,13 +1226,13 @@ function renderResultPreview(rows = []) {
             <td>${result.resultGroup || (/^(I|II|III|IV|1|2|3|4)(?:ST|ND|RD|TH)?\b/i.test(String(result.className || '')) ? 'PRIMARY' : 'SECONDARY')}</td>
             <td>${Number(result.marathi ?? 0)}</td>
             <td>${Number(result.english ?? 0)}</td>
-            <td>${Number(result.maths ?? 0)}</td>
+            <td>${combinedMarks}</td>
             <td>${Number(result.evsScience ?? result.evs ?? 0)}</td>
             <td>${result.socialScience === undefined ? '' : Number(result.socialScience)}</td>
-            <td>${Number(result.logicalReasoning ?? 0)}</td>
             <td>${Number(result.totalMarks || 0)}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 async function loadResultRows() {
@@ -1483,6 +1485,7 @@ async function handleResultExcelUpload(event, group = 'secondary') {
                         marathi: normalizedRow.marathi,
                         english: normalizedRow.english,
                         maths: normalizedRow.maths,
+                        mathsLogicalReasoning: normalizedRow.mathsLogicalReasoning,
                         evs: normalizedRow.evs,
                         evsScience: normalizedRow.evsScience,
                         socialScience: normalizedRow.socialScience,
@@ -1540,6 +1543,7 @@ async function fetchStudentResultForDashboard() {
 
         const result = data.result;
         const isJunior = /^(I|II|III|IV|1|2|3|4)(?:ST|ND|RD|TH)?\b/i.test(String(data.student.className || ''));
+        const combinedMathsMarks = Number(result.mathsLogicalReasoning ?? result.maths ?? result.logicalReasoning ?? 0);
         resultCard.innerHTML = `
             <div class="card-header-icon orange"><i data-lucide="bar-chart-3"></i></div>
             <h3>EXAM RESULT</h3>
@@ -1553,10 +1557,10 @@ async function fetchStudentResultForDashboard() {
             <div class="subject-result-list">
                 <div><span>Marathi</span><strong>${result.marathi}</strong></div>
                 <div><span>English</span><strong>${result.english}</strong></div>
-                <div><span>Maths</span><strong>${result.maths}</strong></div>
+                ${isJunior ? `<div><span>Maths</span><strong>${result.maths}</strong></div>` : `<div><span>Maths & Logical Reasoning</span><strong>${combinedMathsMarks}</strong></div>`}
                 <div><span>EVS / Science</span><strong>${result.evsScience ?? result.evs}</strong></div>
                 ${isJunior ? '' : `<div><span>Social Science</span><strong>${result.socialScience}</strong></div>`}
-                <div><span>Logical Reasoning</span><strong>${result.logicalReasoning}</strong></div>
+                ${isJunior ? `<div><span>Logical Reasoning</span><strong>${result.logicalReasoning}</strong></div>` : ''}
                 <div><span>Total</span><strong>${result.totalMarks} / 200</strong></div>
             </div>
         `;

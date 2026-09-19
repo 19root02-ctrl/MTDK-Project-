@@ -19,11 +19,11 @@ test('Result headers normalize to the exact upload API contract', () => {
   assert.deepEqual([
     normalizeResultHeader('Marathi'),
     normalizeResultHeader('English'),
-    normalizeResultHeader('Maths'),
+    normalizeResultHeader('Maths & Logical Reasoning'),
     normalizeResultHeader('EVS / Science'),
     normalizeResultHeader('Social Science'),
-    normalizeResultHeader('Logical Reasoning')
-  ], ['marathi', 'english', 'maths', 'evsScience', 'socialScience', 'logicalReasoning']);
+    normalizeResultHeader('Maths and Logical Reasoning')
+  ], ['marathi', 'english', 'mathsLogicalReasoning', 'evsScience', 'socialScience', 'mathsLogicalReasoning']);
 });
 
 test('Exam countdown configuration targets 14 February 2027 in India time', () => {
@@ -528,7 +528,7 @@ test('DELETE /api/resources/:id returns 404 and success false for a missing reso
   }
 });
 
-test('POST /api/results/upload calculates a senior 200-mark total', async () => {
+test('POST /api/results/upload calculates a senior 200-mark total with combined maths and logical reasoning', async () => {
   const fakePool = createFakePool({
     selectStudent: {
       reg_no: 'IMTSE-10001',
@@ -562,12 +562,11 @@ test('POST /api/results/upload calculates a senior 200-mark total', async () => 
         results: [{
           registrationNo: 'IMTSE-10001',
           schoolName: 'TEST SCHOOL',
-          marathi: 30,
-          english: 30,
-          maths: 30,
-          evsScience: 30,
-          socialScience: 30,
-          logicalReasoning: 50
+          marathi: 40,
+          english: 40,
+          mathsLogicalReasoning: 40,
+          evsScience: 40,
+          socialScience: 40
         }]
       })
     });
@@ -578,6 +577,7 @@ test('POST /api/results/upload calculates a senior 200-mark total', async () => 
     assert.equal(payload.validStudents, 1);
     assert.equal(payload.summary.total, 200);
     assert.equal(payload.results[0].totalMarks, 200);
+    assert.equal(payload.results[0].mathsLogicalReasoning, 40);
     assert.equal(payload.results[0].percentage, undefined);
     assert.equal(payload.results[0].resultStatus, undefined);
   } finally {
@@ -677,18 +677,18 @@ test('Group-specific uploads reject wrong classes and validate zero, blank, and 
     assert.match((await primaryBlank.json()).errors[0].message, /Missing marks for: Marathi/);
 
     const secondaryValid = await post('/api/results/upload/secondary', {
-      registrationNo: 'IMTSE-GROUP7', marathi: 30, english: 30, maths: 30,
-      evsScience: 30, socialScience: 30, logicalReasoning: 50
+      registrationNo: 'IMTSE-GROUP7', marathi: 40, english: 40, mathsLogicalReasoning: 40,
+      evsScience: 40, socialScience: 40
     });
     assert.equal(secondaryValid.status, 200);
     assert.equal((await secondaryValid.json()).results[0].totalMarks, 200);
 
     const secondaryTooHigh = await post('/api/results/upload/secondary', {
-      registrationNo: 'IMTSE-GROUP7', marathi: 31, english: 30, maths: 30,
-      evsScience: 30, socialScience: 30, logicalReasoning: 51
+      registrationNo: 'IMTSE-GROUP7', marathi: 41, english: 40, mathsLogicalReasoning: 40,
+      evsScience: 40, socialScience: 40
     });
     assert.equal(secondaryTooHigh.status, 400);
-    assert.match((await secondaryTooHigh.json()).errors[0].message, /Invalid marks for: Marathi="31", Logical Reasoning="51"/);
+    assert.match((await secondaryTooHigh.json()).errors[0].message, /Invalid marks for: Marathi="41"/);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
@@ -714,7 +714,7 @@ test('Primary and secondary results share storage and Publish All publishes both
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ results: [result] })
     });
     assert.equal((await upload('primary', { registrationNo: 'IMTSE-PUBLISH3', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40 })).status, 200);
-    assert.equal((await upload('secondary', { registrationNo: 'IMTSE-PUBLISH7', marathi: 30, english: 30, maths: 30, evsScience: 30, socialScience: 30, logicalReasoning: 50 })).status, 200);
+    assert.equal((await upload('secondary', { registrationNo: 'IMTSE-PUBLISH7', marathi: 40, english: 40, mathsLogicalReasoning: 40, evsScience: 40, socialScience: 40 })).status, 200);
     assert.equal(global.__student_results.filter(result => result.status === 'DRAFT').length, 2);
 
     for (const regNo of ['IMTSE-PUBLISH3', 'IMTSE-PUBLISH7']) {
@@ -827,10 +827,10 @@ test('GET /api/students/export and /api/results/template include the school name
     assert.match(secondaryTemplateRes.headers.get('content-type'), /spreadsheetml/);
     const secondaryWorkbook = XLSX.read(Buffer.from(await secondaryTemplateRes.arrayBuffer()), { type: 'buffer' });
     const secondaryRows = XLSX.utils.sheet_to_json(secondaryWorkbook.Sheets.Results, { header: 1, defval: '' });
-    assert.deepEqual(secondaryRows[0], ['Registration No', 'Student Name', 'School Name', 'Standard', 'Medium', 'Payment Mode', 'Marathi', 'English', 'Maths', 'EVS / Science', 'Social Science', 'Logical Reasoning', 'Total']);
+    assert.deepEqual(secondaryRows[0], ['Registration No', 'Student Name', 'School Name', 'Standard', 'Medium', 'Payment Mode', 'Marathi', 'English', 'Maths & Logical Reasoning', 'EVS / Science', 'Social Science', 'Total']);
     assert.equal(secondaryRows.some(row => row[0] === 'IMTSE-10001'), true);
     assert.equal(secondaryRows.some(row => row[0] === 'IMTSE-10002'), false);
-    const secondaryMarkIndexes = [6, 7, 8, 9, 10, 11, 12];
+    const secondaryMarkIndexes = [6, 7, 8, 9, 10, 11];
     assert.equal(secondaryRows.slice(1).every(row => secondaryMarkIndexes.every(index => row[index] === '')), true);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
@@ -934,10 +934,10 @@ test('Result template and upload normalize Registration No headers and ignore bl
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         results: [
-            { 'Reg. No': 'IMTSE-34990', Marathi: '30', English: '30', Maths: '30', EVS: '30', 'Social Science': '30', 'Logical Reasoning': '50', 'School Name': 'ABC School' },
-            { 'Registration Number': 'IMTSE-34991', Marathi: '30', English: '30', Maths: '30', 'EVS / Science': '30', 'Social Science': '30', 'Logical Reasoning': '50', 'School Name': 'XYZ School' },
+            { 'Reg. No': 'IMTSE-34990', Marathi: '30', English: '30', 'Maths & Logical Reasoning': '30', EVS: '30', 'Social Science': '30', 'School Name': 'ABC School' },
+            { 'Registration Number': 'IMTSE-34991', Marathi: '30', English: '30', 'Maths & Logical Reasoning': '30', 'EVS / Science': '30', 'Social Science': '30', 'School Name': 'XYZ School' },
           { 'Registration No': '', 'Mathematics': '', 'English': '', 'Science': '', 'School Name': '' },
-          { 'Reg No': 'IMTSE-99999', Marathi: '30', English: '30', Maths: '30', 'EVS / Science': '30', 'Social Science': '30', 'Logical Reasoning': '50', 'School Name': 'ABC School' }
+          { 'Reg No': 'IMTSE-99999', Marathi: '30', English: '30', 'Maths & Logical Reasoning': '30', 'EVS / Science': '30', 'Social Science': '30', 'School Name': 'ABC School' }
         ]
       })
     });
@@ -967,10 +967,14 @@ test('Generated result template uploads primary and secondary students with clas
 
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const templateResponse = await fetch(`${baseUrl}/api/results/template`);
-    const templateWorkbook = XLSX.read(Buffer.from(await templateResponse.arrayBuffer()), { type: 'buffer' });
-    const templateMatrix = XLSX.utils.sheet_to_json(templateWorkbook.Sheets.Results, { header: 1, defval: '' });
-    const templateRows = templateMatrix.slice(1).map(values => Object.fromEntries(templateMatrix[0].map((header, index) => [header, values[index] || ''])));
+    const primaryTemplateResponse = await fetch(`${baseUrl}/api/results/template/primary`);
+    const primaryWorkbook = XLSX.read(Buffer.from(await primaryTemplateResponse.arrayBuffer()), { type: 'buffer' });
+    const primaryMatrix = XLSX.utils.sheet_to_json(primaryWorkbook.Sheets.Results, { header: 1, defval: '' });
+    const primaryTemplateRows = primaryMatrix.slice(1).map(values => Object.fromEntries(primaryMatrix[0].map((header, index) => [header, values[index] || ''])));
+    const secondaryTemplateResponse = await fetch(`${baseUrl}/api/results/template/secondary`);
+    const secondaryWorkbook = XLSX.read(Buffer.from(await secondaryTemplateResponse.arrayBuffer()), { type: 'buffer' });
+    const secondaryMatrix = XLSX.utils.sheet_to_json(secondaryWorkbook.Sheets.Results, { header: 1, defval: '' });
+    const secondaryTemplateRows = secondaryMatrix.slice(1).map(values => Object.fromEntries(secondaryMatrix[0].map((header, index) => [header, values[index] || ''])));
     const makeRow = (templateRow, values) => ({
       ...templateRow,
       ...Object.fromEntries(Object.entries(values).map(([header, value]) => [header, String(value)]))
@@ -980,13 +984,13 @@ test('Generated result template uploads primary and secondary students with clas
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ results: [
-        makeRow(templateRows[0], {
+        makeRow(primaryTemplateRows[0], {
           'Registration No': 'IMTSE-30001', 'School Name': 'PRIMARY SCHOOL',
           Marathi: 35, English: 36, Maths: 38, 'EVS / Science': 37, 'Logical Reasoning': 39
         }),
-        makeRow(templateRows[1], {
+        makeRow(secondaryTemplateRows[0], {
           'Registration No': 'IMTSE-70001', 'School Name': 'SECONDARY SCHOOL',
-          Marathi: 25, English: 28, Maths: 27, 'EVS / Science': 26, 'Social Science': 24, 'Logical Reasoning': 45
+          Marathi: 25, English: 28, 'Maths & Logical Reasoning': 25, 'EVS / Science': 26, 'Social Science': 24
         })
       ] })
     });
@@ -997,7 +1001,7 @@ test('Generated result template uploads primary and secondary students with clas
     assert.equal(payload.results[0].totalMarks, 185);
     assert.equal(payload.results[0].evs, 37);
     assert.equal(payload.results[0].evsScience, undefined);
-    assert.equal(payload.results[1].totalMarks, 175);
+    assert.equal(payload.results[1].totalMarks, 128);
     assert.equal(payload.results[1].evsScience, 26);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
@@ -1046,7 +1050,7 @@ test('Exact IMTSE-62440 CSV fixture preserves marks and reports over-limit value
     const responseText = await response.text();
     assert.equal(response.status, 400, responseText);
     const payload = JSON.parse(responseText);
-    assert.match(payload.errors[0].message, /Invalid marks for: Marathi="35", English="35", Maths="36"/);
+    assert.match(payload.errors[0].message, /Invalid marks for: Maths & Logical Reasoning="63"/);
   } finally {
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
@@ -1366,7 +1370,7 @@ test('Student result readback maps PostgreSQL subject columns and preserves zero
     assert.equal(response.status, 200);
     const result = (await response.json()).result;
     assert.deepEqual({ marathi: result.marathi, english: result.english, maths: result.maths, evsScience: result.evsScience, socialScience: result.socialScience, logicalReasoning: result.logicalReasoning, totalMarks: result.totalMarks }, {
-      marathi: 0, english: 30, maths: 29, evsScience: 28, socialScience: 27, logicalReasoning: 45, totalMarks: 159
+      marathi: 0, english: 30, maths: 29, evsScience: 28, socialScience: 27, logicalReasoning: 29, totalMarks: 159
     });
   } finally {
     global.__release_controls = previousReleaseState;

@@ -14,12 +14,11 @@
             { field: 'logicalReasoning', apiKey: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 40 }
         ],
         SECONDARY: [
-            { field: 'marathi', apiKey: 'marathi', label: 'Marathi', maxMarks: 30 },
-            { field: 'english', apiKey: 'english', label: 'English', maxMarks: 30 },
-            { field: 'maths', apiKey: 'maths', label: 'Maths', maxMarks: 30 },
-            { field: 'evsScience', apiKey: 'evsScience', label: 'EVS / Science', maxMarks: 30 },
-            { field: 'socialScience', apiKey: 'socialScience', label: 'Social Science', maxMarks: 30 },
-            { field: 'logicalReasoning', apiKey: 'logicalReasoning', label: 'Logical Reasoning', maxMarks: 50 }
+            { field: 'marathi', apiKey: 'marathi', label: 'Marathi', maxMarks: 40 },
+            { field: 'english', apiKey: 'english', label: 'English', maxMarks: 40 },
+            { field: 'mathsLogicalReasoning', apiKey: 'mathsLogicalReasoning', label: 'Maths & Logical Reasoning', maxMarks: 40 },
+            { field: 'evsScience', apiKey: 'evsScience', label: 'EVS / Science', maxMarks: 40 },
+            { field: 'socialScience', apiKey: 'socialScience', label: 'Social Science', maxMarks: 40 }
         ]
     };
 
@@ -35,6 +34,9 @@
             english: 'english',
             maths: 'maths',
             mathematics: 'maths',
+            mathslogicalreasoning: 'mathsLogicalReasoning',
+            mathsandlogicalreasoning: 'mathsLogicalReasoning',
+            mathsandlogicalreasoningcombined: 'mathsLogicalReasoning',
             evs: 'evs',
             science: 'evsScience',
             evsscience: 'evsScience',

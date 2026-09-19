@@ -342,6 +342,16 @@ function getResultMarksFromInput(rawMarks = {}, studentClass = '') {
     if (!match && subject.field === 'evsScience' && group === 'SECONDARY') {
       match = entries.find(([header, value]) => normalizeResultHeader(header) === 'evs' && hasValue(value));
     }
+    if (!match && subject.field === 'mathsLogicalReasoning' && group === 'SECONDARY') {
+      const mathsMatch = entries.find(([header, value]) => normalizeResultHeader(header) === 'maths' && hasValue(value));
+      const logicalMatch = entries.find(([header, value]) => normalizeResultHeader(header) === 'logicalReasoning' && hasValue(value));
+      const maths = toNumber(mathsMatch ? mathsMatch[1] : undefined);
+      const logical = toNumber(logicalMatch ? logicalMatch[1] : undefined);
+      if (maths !== null || logical !== null) {
+        marks[subject.apiKey] = Number((maths ?? 0) + (logical ?? 0));
+        return;
+      }
+    }
     const parsed = toNumber(match ? match[1] : undefined);
     marks[subject.apiKey] = parsed;
   });
@@ -354,8 +364,24 @@ function getRawResultMark(rawMarks = {}, subject, group) {
     ? ['evs', 'evsScience']
     : group === 'SECONDARY' && subject.field === 'evsScience'
       ? ['evsScience', 'evs']
-      : [subject.field];
-  const match = entries.find(([header]) => aliases.includes(normalizeResultHeader(header)));
+      : group === 'SECONDARY' && subject.field === 'mathsLogicalReasoning'
+        ? ['mathsLogicalReasoning', 'maths', 'logicalReasoning']
+        : [subject.field];
+
+  const matchingEntries = entries.filter(([header]) => aliases.includes(normalizeResultHeader(header)));
+  const populatedMatch = matchingEntries.find(([, value]) => String(value ?? '').trim() !== '');
+  const matchingValues = matchingEntries.map(([, value]) => value);
+
+  if (subject.field === 'mathsLogicalReasoning' && matchingValues.length > 0) {
+    const numbers = matchingValues
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value) && String(value ?? '').trim() !== '');
+    if (numbers.length > 0) return String(numbers.reduce((sum, value) => sum + value, 0));
+    return populatedMatch ? String(populatedMatch[1] ?? '').trim() : String(matchingValues[0] ?? '').trim();
+  }
+
+  if (populatedMatch) return String(populatedMatch[1] ?? '').trim();
+  const match = matchingEntries[0];
   return match ? String(match[1] ?? '').trim() : '';
 }
 
@@ -378,15 +404,23 @@ function serializeResultRecord(row, studentClass = '') {
       marathi: 'marathi',
       english: 'english',
       maths: 'maths',
+      mathsLogicalReasoning: 'maths_logical_reasoning',
       evs: 'evs_science',
       evsScience: 'evs_science',
       socialScience: 'social_science',
       logicalReasoning: 'logical_reasoning'
     }[subject.apiKey];
     const legacyValue = subject.apiKey === 'maths' ? row.mathematics : subject.apiKey === 'evs' || subject.apiKey === 'evsScience' ? row.science : undefined;
-    const storedValue = row[subject.apiKey] ?? row[databaseColumn] ?? legacyValue;
+    const storedValue = row[subject.apiKey] ?? row[databaseColumn] ?? legacyValue ?? (
+      subject.apiKey === 'mathsLogicalReasoning'
+        ? (row.maths ?? row.logicalReasoning ?? row.logical_reasoning ?? undefined)
+        : undefined
+    );
     subjectMarks[subject.apiKey] = toNumber(storedValue);
   });
+  const combinedMathsMarks = subjectMarks.mathsLogicalReasoning ?? toNumber(
+    row.mathsLogicalReasoning ?? row.maths_logical_reasoning ?? row.maths ?? row.logicalReasoning ?? row.logical_reasoning
+  );
   const status = String(row.status || 'DRAFT').toUpperCase();
 
   return {
@@ -396,6 +430,9 @@ function serializeResultRecord(row, studentClass = '') {
     className: resolvedClass,
     resultGroup: row.result_group || row.resultGroup || getGroupForClass(resolvedClass),
     ...subjectMarks,
+    mathsLogicalReasoning: combinedMathsMarks,
+    maths: combinedMathsMarks,
+    logicalReasoning: combinedMathsMarks,
     totalMarks: Number(row.total_marks ?? 0),
     status,
     verifiedAt: row.verified_at || null,
@@ -486,20 +523,28 @@ async function getResultByRegNo(regNo, studentClass = '') {
 }
 
 async function createOrUpdateResultRecord(resultPayload) {
+  const combinedMathsMarks = Number(
+    resultPayload.mathsLogicalReasoning ?? (
+      Number.isFinite(Number(resultPayload.maths)) && Number.isFinite(Number(resultPayload.logicalReasoning))
+        ? Number(resultPayload.maths) + Number(resultPayload.logicalReasoning)
+        : (resultPayload.maths ?? resultPayload.logicalReasoning ?? 0)
+    )
+  );
+
   if (isDbConnected && connectionPool) {
     try {
       const values = [
         resultPayload.regNo,
         resultPayload.studentName || '',
-        Number(resultPayload.maths ?? 0),
+        Number(resultPayload.mathsLogicalReasoning ?? resultPayload.maths ?? 0),
         Number(resultPayload.english ?? 0),
         Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
         Number(resultPayload.totalMarks ?? 0),
         Number(resultPayload.marathi ?? 0),
-        Number(resultPayload.maths ?? 0),
+        combinedMathsMarks,
         Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
         Number(resultPayload.socialScience ?? 0),
-        Number(resultPayload.logicalReasoning ?? 0),
+        combinedMathsMarks,
         String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
         String(resultPayload.status || 'DRAFT').toUpperCase()
       ];
@@ -535,15 +580,16 @@ async function createOrUpdateResultRecord(resultPayload) {
     student_name: resultPayload.studentName || '',
     studentName: resultPayload.studentName || '',
     className: resultPayload.className || '',
-    mathematics: Number(resultPayload.maths ?? 0),
+    mathematics: combinedMathsMarks,
     english: Number(resultPayload.english ?? 0),
     science: Number(resultPayload.evsScience ?? resultPayload.evs ?? 0),
     marathi: Number(resultPayload.marathi ?? 0),
-    maths: Number(resultPayload.maths ?? 0),
+    maths: combinedMathsMarks,
     evs: Number(resultPayload.evs ?? 0),
     evsScience: Number(resultPayload.evsScience ?? 0),
     socialScience: Number(resultPayload.socialScience ?? 0),
-    logicalReasoning: Number(resultPayload.logicalReasoning ?? 0),
+    logicalReasoning: combinedMathsMarks,
+    mathsLogicalReasoning: combinedMathsMarks,
     result_group: String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
     resultGroup: String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
     total_marks: Number(resultPayload.totalMarks ?? 0),
@@ -1459,6 +1505,7 @@ function createServer(options = {}) {
           marathi: result.marathi,
           english: result.english,
           maths: result.maths,
+          mathsLogicalReasoning: result.mathsLogicalReasoning ?? result.maths ?? result.logicalReasoning,
           evs: result.evs,
           evsScience: result.evsScience,
           socialScience: result.socialScience,
