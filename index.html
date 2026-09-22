@@ -964,6 +964,8 @@
                         <h2>Admin Panel</h2>
                         <div class="admin-panel-switcher">
                             <button type="button" class="panel-toggle active" onclick="showAdminPanel('students')">Student Profiles</button>
+                            <button type="button" class="panel-toggle" onclick="showAdminPanel('manual')">Manual Registration</button>
+                            <button type="button" class="panel-toggle" onclick="showAdminPanel('emails')">Email Status</button>
                             <button type="button" class="panel-toggle" onclick="showAdminPanel('resources')">Study Resources</button>
                             <button type="button" class="panel-toggle" onclick="showAdminPanel('results')">Result Management</button>
                             <button type="button" class="panel-toggle" onclick="showAdminPanel('release')">Exam Release Controls</button>
@@ -1079,6 +1081,46 @@
                                         </tr>
                                     </thead>
                                     <tbody id="adminStudentsTable"></tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section id="adminManualPanel" class="admin-card admin-panel-section hidden">
+                            <div class="admin-card-header">
+                                <div>
+                                    <h3>Manual Registration</h3>
+                                    <p>Upload the approved Excel columns to preview and import school registrations.</p>
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label for="manualRegistrationExcelInput">Upload Excel</label>
+                                <input type="file" id="manualRegistrationExcelInput" accept=".xlsx,.xls" onchange="handleManualRegistrationExcel(event)">
+                            </div>
+                            <div id="manualRegistrationSummary" class="result-alert-box hidden"></div>
+                            <div id="manualRegistrationErrors" class="result-alert-box hidden"></div>
+                            <div id="manualRegistrationPreview" class="table-wrapper hidden">
+                                <table class="data-table">
+                                    <thead><tr><th>Row</th><th>Name</th><th>Standard</th><th>DOB</th><th>Mobile</th><th>Email</th><th>Status</th></tr></thead>
+                                    <tbody id="manualRegistrationPreviewTable"></tbody>
+                                </table>
+                                <button id="manualRegistrationImportButton" type="button" class="btn-primary" onclick="confirmManualRegistrationImport()" disabled>Confirm Import</button>
+                            </div>
+                        </section>
+
+                        <section id="adminEmailPanel" class="admin-card admin-panel-section hidden">
+                            <div class="admin-card-header">
+                                <div>
+                                    <h3>Email Status</h3>
+                                    <p>Monitor registration email delivery without blocking student access.</p>
+                                </div>
+                                <button type="button" class="btn-secondary" onclick="loadEmailStatusPanel()">Refresh</button>
+                            </div>
+                            <div id="emailStatusSummary" class="result-summary-grid"></div>
+                            <h4>Waiting Emails</h4>
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <thead><tr><th>Student Name</th><th>Registration No.</th><th>Email</th><th>Registration Type</th><th>Status</th><th>Created At</th></tr></thead>
+                                    <tbody id="waitingEmailsTable"></tbody>
                                 </table>
                             </div>
                         </section>
@@ -1298,10 +1340,10 @@
 
                     <form id="imtseLoginForm" onsubmit="handleLoginSubmit(event)">
                         <div class="input-group">
-                            <label for="loginRegNo">Registration Number / Phone</label>
+                            <label for="loginRegNo">Mobile Number</label>
                             <div class="input-icon-wrapper">
                                 <i data-lucide="user"></i>
-                                <input type="text" id="loginRegNo" placeholder="IMTSE-XXXXX or Mobile number" required>
+                                <input type="tel" id="loginRegNo" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" required>
                             </div>
                         </div>
 
@@ -1342,6 +1384,7 @@
                         <div class="sidebar-menu">
                             <a href="#" class="sidebar-item active"><i data-lucide="layout-dashboard"></i> Dashboard Overview</a>
                             <a href="#" class="sidebar-item" onclick="downloadHallTicket(event); return false;"><i data-lucide="file-badge"></i> Download Admit Card</a>
+                            <a href="#" class="sidebar-item" onclick="downloadCertificate(event); return false;"><i data-lucide="award"></i> Download Certificate</a>
                             <a href="#" class="sidebar-item" onclick="fetchStudentResultForDashboard(); return false;"><i data-lucide="bar-chart-3"></i> View Exam Results</a>
                             <hr>
                             <a href="#" class="sidebar-item logout" onclick="handleDashboardLogout()"><i data-lucide="log-out"></i> Sign Out</a>

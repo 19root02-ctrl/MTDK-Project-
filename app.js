@@ -88,6 +88,7 @@ let adminSession = false;
 let adminCredentials = null;
 let adminResultData = [];
 let resultPreviewData = [];
+let manualRegistrationPreviewRows = [];
 const API_BASE_URL = window.location.origin;
 try {
     const savedStudents = localStorage.getItem("imtse_students");
@@ -939,9 +940,27 @@ function getDobIsoFormat(dobString) {
 // ==================== LOGIN PORTAL & STUDENT DASHBOARD ====================
 async function handleLoginSubmit(event) {
     event.preventDefault();
-    
-    const loginUser = document.getElementById("loginRegNo").value.trim().toUpperCase();
+    const loginUser = document.getElementById("loginRegNo").value.trim();
     const loginPass = document.getElementById("loginPass").value.trim();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/student/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ mobile: loginUser, dob: loginPass })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success || !payload.student) {
+            throw new Error(payload.error || 'Invalid mobile number or DOB.');
+        }
+        activeStudentSession = payload.student;
+        showDashboardView(payload.student);
+        return;
+    } catch (error) {
+        alert(error.message || 'Invalid mobile number or DOB.');
+        return;
+    }
 
     const loginPassDigits = (loginPass || "").replace(/\D/g, "");
     let existUser = null;
@@ -1010,8 +1029,8 @@ async function handleLoginSubmit(event) {
     }
 
     const debugMessage = existUser
-        ? 'Invalid password. Use your DOB in YYYY-MM-DD or DDMMYYYY format.'
-        : 'Invalid login credentials. Please verify your registration number or mobile number and DOB.';
+        ? 'Invalid DOB. Use your DOB in YYYY-MM-DD or DDMMYYYY format.'
+        : 'Invalid login credentials. Please verify your mobile number and DOB.';
 
     alert(debugMessage);
     const dbg = document.getElementById('loginDebug');
@@ -1161,6 +1180,7 @@ function showDashboardView(student) {
 }
 
 function handleDashboardLogout() {
+    fetch(`${API_BASE_URL}/api/student/logout`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
     activeStudentSession = null;
     document.getElementById("imtseLoginForm").reset();
     
@@ -1290,7 +1310,7 @@ function applyResultSchoolFilter() {
 
 async function verifyResultRow(regNo) {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/verify`, { method: 'POST' });
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/verify`, { method: 'POST', headers: getAdminReleaseHeaders() });
         if (!response.ok) throw new Error('Verification failed');
         await loadResultRows();
         await loadResultSummary();
@@ -1303,7 +1323,7 @@ async function verifyResultRow(regNo) {
 async function publishResultRow(regNo) {
     if (!confirm('Are you sure you want to publish the results? Students will be able to view their results after the release time.')) return;
     try {
-        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/publish`, { method: 'POST' });
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/publish`, { method: 'POST', headers: getAdminReleaseHeaders() });
         if (!response.ok) throw new Error('Publish failed');
         await loadResultRows();
         await loadResultSummary();
@@ -1316,7 +1336,7 @@ async function publishResultRow(regNo) {
 async function publishAllResults() {
     if (!confirm('Publish all verified results from Classes 1–4 and Classes 5–10?')) return;
     try {
-        const response = await fetch(`${API_BASE_URL}/api/results/publish-all`, { method: 'POST' });
+        const response = await fetch(`${API_BASE_URL}/api/results/publish-all`, { method: 'POST', headers: getAdminReleaseHeaders() });
         if (!response.ok) throw new Error('Publish all failed');
         await loadResultRows();
         await loadResultSummary();
@@ -1328,7 +1348,7 @@ async function publishAllResults() {
 
 async function reopenResultRow(regNo) {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/reopen`, { method: 'POST' });
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}/reopen`, { method: 'POST', headers: getAdminReleaseHeaders() });
         if (!response.ok) throw new Error('Reopen failed');
         await loadResultRows();
         await loadResultSummary();
@@ -1497,7 +1517,7 @@ async function handleResultExcelUpload(event, group = 'secondary') {
 
             const response = await fetch(`${API_BASE_URL}/api/results/upload/${group}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...getAdminReleaseHeaders() },
                 body: JSON.stringify(payload)
             });
             const data = await response.json();
@@ -1533,7 +1553,7 @@ async function fetchStudentResultForDashboard() {
     if (!regNo || !dob) return;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/results/me?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`);
+        const response = await fetch(`${API_BASE_URL}/api/results/me`, { credentials: 'same-origin' });
         const data = await response.json();
         if (!response.ok || !data || !data.success || !data.result) {
             resultCard.innerHTML = '<div class="result-status-message">Result is not published yet.</div>';
@@ -1942,7 +1962,7 @@ function downloadHallTicket(eventOrStudent = null, studentOverride = null) {
 
     const regNo = student.regNo || student.reg_no || '';
     const dob = student.dob || '';
-    fetch(`/api/hall-ticket?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`)
+    fetch(`/api/hall-ticket?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`, { credentials: 'same-origin' })
         .then(response => {
             return response.json().then(data => {
                 if (!response.ok) throw new Error(data.error || data.message || 'Hall Ticket is not yet available.');
@@ -1974,6 +1994,35 @@ function downloadHallTicket(eventOrStudent = null, studentOverride = null) {
             alert(error.message || "Error checking Hall Ticket availability. Please try again.");
         })
         ;
+}
+
+function downloadCertificate(eventOrStudent = null, studentOverride = null) {
+    const event = eventOrStudent && typeof eventOrStudent.preventDefault === "function"
+        ? eventOrStudent
+        : null;
+    if (event) event.preventDefault();
+    const student = event ? studentOverride || activeStudentSession : eventOrStudent || studentOverride || activeStudentSession;
+    if (!student) {
+        alert('Please login to download your certificate.');
+        return;
+    }
+    const regNo = student.regNo || student.reg_no || '';
+    const dob = student.dob || '';
+    fetch(`/api/certificate?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`, { credentials: 'same-origin' })
+        .then(response => {
+            if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Certificate is unavailable.'); });
+            return response.blob();
+        })
+        .then(blob => {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `IMTSE_Certificate_${String(regNo).replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(link.href);
+        })
+        .catch(error => alert(error.message || 'Certificate download failed.'));
 }
 
 function populateAdminCategoryOptions() {
@@ -2096,21 +2145,110 @@ function resetAdminResourceForm() {
     toggleResourceInputMode();
 }
 
+function escapeAdminText(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+}
+
+async function handleManualRegistrationExcel(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const errorBox = document.getElementById('manualRegistrationErrors');
+    const summaryBox = document.getElementById('manualRegistrationSummary');
+    const previewBox = document.getElementById('manualRegistrationPreview');
+    const importButton = document.getElementById('manualRegistrationImportButton');
+    try {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: false });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+        const response = await fetch(`${API_BASE_URL}/api/admin/manual-registration/preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAdminReleaseHeaders() },
+            body: JSON.stringify({ rows })
+        });
+        const payload = await response.json();
+        manualRegistrationPreviewRows = payload.preview || [];
+        summaryBox.classList.remove('hidden');
+        summaryBox.textContent = `Total: ${payload.totalRecords || 0} | Valid: ${payload.validRecords || 0} | Invalid: ${payload.invalidRecords || 0}`;
+        errorBox.classList.toggle('hidden', !payload.errors?.length);
+        errorBox.innerHTML = (payload.errors || []).map(error => `<div>Row ${escapeAdminText(error.row)}: ${escapeAdminText(error.message)}</div>`).join('');
+        previewBox.classList.remove('hidden');
+        document.getElementById('manualRegistrationPreviewTable').innerHTML = manualRegistrationPreviewRows.map(row => `
+            <tr><td>${escapeAdminText(row.rowNumber)}</td><td>${escapeAdminText(row.name)}</td><td>${escapeAdminText(row.standard)}</td><td>${escapeAdminText(row.dob)}</td><td>${escapeAdminText(row.mobile)}</td><td>${escapeAdminText(row.email)}</td><td>${escapeAdminText(row.status)}</td></tr>
+        `).join('');
+        importButton.disabled = !payload.validRecords || !response.ok;
+        if (!response.ok && !payload.preview?.length) throw new Error(payload.message || 'Manual registration preview failed.');
+    } catch (error) {
+        manualRegistrationPreviewRows = [];
+        summaryBox.classList.add('hidden');
+        previewBox.classList.add('hidden');
+        importButton.disabled = true;
+        errorBox.classList.remove('hidden');
+        errorBox.textContent = error.message || 'Could not read the Excel file.';
+    }
+}
+
+async function confirmManualRegistrationImport() {
+    if (!manualRegistrationPreviewRows.length) return;
+    const response = await fetch(`${API_BASE_URL}/api/admin/manual-registration/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAdminReleaseHeaders() },
+        body: JSON.stringify({ rows: manualRegistrationPreviewRows })
+    });
+    const payload = await response.json();
+    const summaryBox = document.getElementById('manualRegistrationSummary');
+    const errorBox = document.getElementById('manualRegistrationErrors');
+    if (!response.ok) {
+        errorBox.classList.remove('hidden');
+        errorBox.textContent = payload.message || 'Manual registration import failed.';
+        return;
+    }
+    summaryBox.classList.remove('hidden');
+    summaryBox.textContent = `Imported: ${payload.imported} | Duplicate: ${payload.duplicate} | Invalid: ${payload.invalid} | Emails sent: ${payload.emailSent} | Waiting: ${payload.emailWaiting} | Failed: ${payload.emailFailed}`;
+    errorBox.classList.toggle('hidden', !(payload.skipped || []).length);
+    errorBox.innerHTML = (payload.skipped || []).map(item => `<div>Row ${escapeAdminText(item.row)}: ${escapeAdminText(item.message)}</div>`).join('');
+    document.getElementById('manualRegistrationImportButton').disabled = true;
+    await loadStudentsFromDatabase();
+    await loadEmailStatusPanel();
+}
+
+async function loadEmailStatusPanel() {
+    const summaryContainer = document.getElementById('emailStatusSummary');
+    const tableBody = document.getElementById('waitingEmailsTable');
+    if (!summaryContainer || !tableBody) return;
+    try {
+        const [summaryResponse, waitingResponse] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/admin/email-status`, { headers: getAdminReleaseHeaders() }),
+            fetch(`${API_BASE_URL}/api/admin/email/waiting`, { headers: getAdminReleaseHeaders() })
+        ]);
+        if (!summaryResponse.ok || !waitingResponse.ok) throw new Error('Email status could not be loaded.');
+        const summary = await summaryResponse.json();
+        const waiting = await waitingResponse.json();
+        summaryContainer.innerHTML = [
+            ['Sent', summary.sent || 0], ['Waiting / Pending', summary.waiting || 0], ['Failed', summary.failed || 0]
+        ].map(([label, value]) => `<div class="summary-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
+        tableBody.innerHTML = waiting.length ? waiting.map(row => `<tr><td>${escapeAdminText(row.student_name)}</td><td>${escapeAdminText(row.registration_number)}</td><td>${escapeAdminText(row.email_address)}</td><td>${escapeAdminText(row.registration_type)}</td><td>${escapeAdminText(row.status)}</td><td>${escapeAdminText(row.created_at)}</td></tr>`).join('') : '<tr><td colspan="6">No waiting emails.</td></tr>';
+    } catch (error) {
+        tableBody.innerHTML = `<tr><td colspan="6">${escapeAdminText(error.message || 'Email status unavailable.')}</td></tr>`;
+    }
+}
+
 function showAdminPanel(panelName) {
     const studentPanel = document.getElementById("adminStudentPanel");
+    const manualPanel = document.getElementById("adminManualPanel");
+    const emailPanel = document.getElementById("adminEmailPanel");
     const resourcePanel = document.getElementById("adminResourcePanel");
     const releasePanel = document.getElementById("adminReleasePanel");
     const resultPanel = document.getElementById("adminResultPanel");
     const buttons = document.querySelectorAll(".panel-toggle");
 
-    const visiblePanel = panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : panelName === 'release' ? releasePanel : studentPanel;
-    const hiddenPanels = [studentPanel, resourcePanel, resultPanel, releasePanel].filter(panel => panel && panel !== visiblePanel);
+    const visiblePanel = panelName === 'manual' ? manualPanel : panelName === 'emails' ? emailPanel : panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : panelName === 'release' ? releasePanel : studentPanel;
+    const hiddenPanels = [studentPanel, manualPanel, emailPanel, resourcePanel, resultPanel, releasePanel].filter(panel => panel && panel !== visiblePanel);
 
     if (visiblePanel) visiblePanel.classList.remove('hidden');
     hiddenPanels.forEach(panel => panel && panel.classList.add('hidden'));
 
     buttons.forEach(button => {
-        const label = panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : panelName === 'release' ? 'Exam Release Controls' : 'Student Profiles';
+        const label = panelName === 'manual' ? 'Manual Registration' : panelName === 'emails' ? 'Email Status' : panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : panelName === 'release' ? 'Exam Release Controls' : 'Student Profiles';
         const isActive = button.textContent.includes(label);
         button.classList.toggle('active', isActive);
     });
@@ -2119,6 +2257,7 @@ function showAdminPanel(panelName) {
         loadResultSummary();
         loadResultRows();
     }
+    if (panelName === 'emails') loadEmailStatusPanel();
     if (panelName === 'release') loadReleaseStatus();
 }
 

@@ -11,6 +11,18 @@ const adminHeaders = {
   Authorization: `Basic ${Buffer.from('MTDK:MTDK@123').toString('base64')}`
 };
 
+async function loginStudent(baseUrl, mobile, dob) {
+  const response = await fetch(`${baseUrl}/api/student/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mobile, dob })
+  });
+  assert.equal(response.status, 200);
+  const cookie = response.headers.get('set-cookie');
+  assert.match(cookie || '', /student_session=/);
+  return { Cookie: cookie.split(';')[0] };
+}
+
 test.beforeEach(() => {
   global.__release_controls = { hallTicketReleased: false, resultReleased: false };
 });
@@ -30,6 +42,267 @@ test('Exam countdown configuration targets 14 February 2027 in India time', () =
   assert.equal(EXAM_DATE, '2027-02-14T00:00:00+05:30');
 });
 
+test('Manual registration preview rejects rows missing DOB and invalid DOB', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows: [{
+          'Sr. No.': 1,
+          'Name of the Student': 'Test Student',
+          'Std.': 'V',
+          'Date of Birth': '',
+          'Medium': 'English',
+          'School & School Address': 'ABC School',
+          'Mob. No.': '9876543210',
+          'Email ID': 'student@example.com',
+          'Payment Mode': 'UPI'
+        }, {
+          'Sr. No.': 2,
+          'Name of the Student': 'Bad DOB Student',
+          'Std.': 'V',
+          'Date of Birth': '32-02-2017',
+          'Medium': 'English',
+          'School & School Address': 'ABC School',
+          'Mob. No.': '9876543211',
+          'Email ID': 'bad@example.com',
+          'Payment Mode': 'Cash'
+        }]
+      })
+    });
+
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.equal(payload.validRecords, 0);
+    assert.equal(Array.isArray(payload.errors), true);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Student login uses Mobile + DOB and prevents cross-student result access', async () => {
+  const fakePool = createFakePool({
+    listStudents: [
+      { reg_no: 'IMTSE-ONLINE-1', full_name: 'ONLINE STUDENT', student_class: 'VII', dob: '2014-08-15', whatsapp: '9000000001', status: 'Approved' },
+      { reg_no: 'IMTSE-MANUAL-1', full_name: 'MANUAL STUDENT', student_class: 'III', dob: '2016-08-16', whatsapp: '9000000002', status: 'Approved & Active (Fees Paid)' }
+    ]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const unauthenticated = await fetch(`${baseUrl}/api/results/me`);
+    assert.equal(unauthenticated.status, 401);
+    const invalidLogin = await fetch(`${baseUrl}/api/student/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile: '9000000001', dob: '2010-01-01' })
+    });
+    assert.equal(invalidLogin.status, 401);
+
+    const onlineHeaders = await loginStudent(baseUrl, '9000000001', '2014-08-15');
+    const own = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-ONLINE-1&dob=2014-08-15`, { headers: onlineHeaders });
+    assert.equal(own.status, 200);
+    const crossStudent = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-MANUAL-1&dob=2016-08-16`, { headers: onlineHeaders });
+    assert.equal(crossStudent.status, 403);
+    const manualHeaders = await loginStudent(baseUrl, '9000000002', '2016-08-16');
+    const manualOwn = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-MANUAL-1`, { headers: manualHeaders });
+    assert.equal(manualOwn.status, 200);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Manual registration preview rejects workbooks with missing required headers', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: [{ Name: 'Missing headers' }] })
+    });
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.match(payload.errors[0].message, /Missing required columns/i);
+    assert.match(payload.errors[0].message, /Date of Birth/i);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Manual registration preview rejects standards outside 1 through 10', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: [{
+        'Sr. No.': 1, 'Name of the Student': 'Out Of Range', 'Std.': '11', 'Date of Birth': '2015-08-15',
+        Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543299',
+        'Email ID': 'out-of-range@example.com', 'Payment Mode': 'Cash'
+      }] })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).errors[0].message, /Invalid Standard/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Manual registration import generates a unique registration number and stores DOB for student login', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const port = server.address().port;
+    const preview = await fetch(`http://127.0.0.1:${port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows: [{
+          'Sr. No.': 1,
+          'Name of the Student': 'Manual Student',
+          'Std.': 'VII',
+          'Date of Birth': '2015-08-15',
+          'Medium': 'English',
+          'School & School Address': 'ABC School, Pune',
+          'Mob. No.': '9988776655',
+          'Email ID': 'manual@example.com',
+          'Payment Mode': 'Cash'
+        }]
+      })
+    });
+    assert.equal(preview.status, 200);
+    const previewPayload = await preview.json();
+    assert.equal(previewPayload.validRecords, 1);
+    assert.match(previewPayload.preview[0].status, /Ready|ready/i);
+
+    const importRes = await fetch(`http://127.0.0.1:${port}/api/admin/manual-registration/import`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: previewPayload.preview })
+    });
+
+    assert.equal(importRes.status, 200);
+    const importPayload = await importRes.json();
+    assert.equal(importPayload.imported, 1);
+    assert.match(importPayload.students[0].regNo, /^IMTSE-/);
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/students`);
+    assert.equal(listRes.status, 200);
+    const studentList = await listRes.json();
+    const student = studentList.find(item => item.whatsapp === '9988776655');
+    assert.ok(student);
+    assert.equal(student.dob, '2015-08-15');
+
+    const login = await fetch(`http://127.0.0.1:${port}/api/student/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile: '9988776655', dob: '2015-08-15' })
+    });
+    assert.equal(login.status, 200);
+    assert.match(login.headers.get('set-cookie') || '', /student_session=/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Manual students flow through primary and secondary result release ownership rules', async () => {
+  const previousStudents = global.__students;
+  const previousResults = global.__student_results;
+  const previousReleaseState = global.__release_controls;
+  global.__students = [];
+  global.__student_results = [];
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
+  const app = createServer({ pool: { query: async sql => /SELECT \* FROM students ORDER BY/i.test(String(sql)) ? { rows: global.__students } : { rows: [] } } });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const rows = [
+      {
+        'Sr. No.': 1, 'Name of the Student': 'PRIMARY MANUAL', 'Std.': 'III', 'Date of Birth': '2016-08-15',
+        Medium: 'English', 'School & School Address': 'PRIMARY SCHOOL', 'Mob. No.': '8111111111',
+        'Email ID': 'primary-manual@example.com', 'Payment Mode': 'Cash'
+      },
+      {
+        'Sr. No.': 2, 'Name of the Student': 'SECONDARY MANUAL', 'Std.': 'VII', 'Date of Birth': '2014-08-16',
+        Medium: 'English', 'School & School Address': 'SECONDARY SCHOOL', 'Mob. No.': '8222222222',
+        'Email ID': 'secondary-manual@example.com', 'Payment Mode': 'Cash'
+      }
+    ];
+    const importResponse = await fetch(`${baseUrl}/api/admin/manual-registration/import`, {
+      method: 'POST', headers: { ...adminHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ rows })
+    });
+    assert.equal(importResponse.status, 200);
+    const imported = await importResponse.json();
+    assert.equal(imported.imported, 2);
+    const primary = global.__students.find(student => student.student_class === 'III');
+    const secondary = global.__students.find(student => student.student_class === 'VII');
+    assert.ok(primary && secondary);
+
+    const upload = (path, result) => fetch(`${baseUrl}${path}`, {
+      method: 'POST', headers: { ...adminHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ results: [result] })
+    });
+    assert.equal((await upload('/api/results/upload/primary', { registrationNo: primary.regNo, schoolName: 'PRIMARY SCHOOL', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40 })).status, 200);
+    assert.equal((await upload('/api/results/upload/secondary', { registrationNo: secondary.regNo, schoolName: 'SECONDARY SCHOOL', marathi: 40, english: 40, mathsLogicalReasoning: 40, evsScience: 40, socialScience: 40 })).status, 200);
+
+    for (const student of [primary, secondary]) {
+      assert.equal((await fetch(`${baseUrl}/api/results/${student.regNo}/verify`, { method: 'POST', headers: adminHeaders })).status, 200);
+      const studentHeaders = await loginStudent(baseUrl, student.whatsapp, student.dob);
+      const beforeRelease = await fetch(`${baseUrl}/api/results/me?regNo=${student.regNo}&dob=${student.dob}`, { headers: studentHeaders });
+      assert.equal((await beforeRelease.json()).published, false);
+      assert.equal((await fetch(`${baseUrl}/api/results/me?regNo=${student.regNo}&dob=2010-01-01`, { headers: studentHeaders })).status, 403);
+    }
+
+    assert.equal((await fetch(`${baseUrl}/api/admin/release/result`, { method: 'POST', headers: adminHeaders })).status, 200);
+    for (const student of [primary, secondary]) {
+      const studentHeaders = await loginStudent(baseUrl, student.whatsapp, student.dob);
+      const result = await fetch(`${baseUrl}/api/results/me?regNo=${student.regNo}&dob=${student.dob}`, { headers: studentHeaders });
+      assert.equal((await result.json()).published, true);
+      const otherDob = student === primary ? secondary.dob : primary.dob;
+      assert.equal((await fetch(`${baseUrl}/api/results/me?regNo=${student.regNo}&dob=${otherDob}`, { headers: studentHeaders })).status, 403);
+    }
+
+    const newImport = await fetch(`${baseUrl}/api/admin/manual-registration/import`, {
+      method: 'POST', headers: { ...adminHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: [{ ...rows[0], 'Sr. No.': 3, 'Name of the Student': 'NEW AFTER RELEASE', 'Mob. No.': '8333333333', 'Email ID': 'new-after-release@example.com' }] })
+    });
+    assert.equal(newImport.status, 200);
+    const newStudent = global.__students.find(student => student.whatsapp === '8333333333');
+    assert.equal((await upload('/api/results/upload/primary', { registrationNo: newStudent.regNo, schoolName: 'PRIMARY SCHOOL', marathi: 35, english: 35, maths: 35, evs: 35, logicalReasoning: 35 })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/results/${newStudent.regNo}/verify`, { method: 'POST', headers: adminHeaders })).status, 200);
+    const newHeaders = await loginStudent(baseUrl, newStudent.whatsapp, newStudent.dob);
+    const newBeforeRelease = await fetch(`${baseUrl}/api/results/me?regNo=${newStudent.regNo}&dob=${newStudent.dob}`, { headers: newHeaders });
+    assert.equal((await newBeforeRelease.json()).published, false);
+  } finally {
+    global.__students = previousStudents;
+    global.__student_results = previousResults;
+    global.__release_controls = previousReleaseState;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('Global release controls require admin access and release Hall Tickets/results together', async () => {
   const previousResults = global.__student_results;
   global.__student_results = [
@@ -38,8 +311,8 @@ test('Global release controls require admin access and release Hall Tickets/resu
   ];
   const fakePool = createFakePool({
     listStudents: [
-      { reg_no: 'IMTSE-REL3', full_name: 'PRIMARY', student_class: 'III', dob: '2014-08-15', school_name: 'SCHOOL' },
-      { reg_no: 'IMTSE-REL7', full_name: 'SECONDARY', student_class: 'VII', dob: '2014-08-16', school_name: 'SCHOOL' }
+      { reg_no: 'IMTSE-REL3', full_name: 'PRIMARY', student_class: 'III', dob: '2014-08-15', whatsapp: '9444444444', school_name: 'SCHOOL' },
+      { reg_no: 'IMTSE-REL7', full_name: 'SECONDARY', student_class: 'VII', dob: '2014-08-16', whatsapp: '9555555555', school_name: 'SCHOOL' }
     ]
   });
   const app = createServer({ pool: fakePool });
@@ -70,9 +343,10 @@ test('Global release controls require admin access and release Hall Tickets/resu
     assert.equal(released.resultReleased, true);
     assert.equal(global.__student_results.every(result => result.status === 'PUBLISHED'), true);
 
-    const ownResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-REL3&dob=2014-08-15`);
+    const ownHeaders = await loginStudent(baseUrl, '9444444444', '2014-08-15');
+    const ownResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-REL3&dob=2014-08-15`, { headers: ownHeaders });
     assert.equal((await ownResult.json()).result.regNo, 'IMTSE-REL3');
-    const otherResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-REL7&dob=2014-08-15`);
+    const otherResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-REL7&dob=2014-08-15`, { headers: ownHeaders });
     assert.equal(otherResult.status, 403);
   } finally {
     global.__student_results = previousResults;
@@ -113,7 +387,8 @@ test('Persisted release state is the default source and controls remain independ
  */
 function createFakePool(customHandlers = {}) {
   const state = {
-    resources: (customHandlers.resources || []).map(resource => ({ ...resource }))
+    resources: (customHandlers.resources || []).map(resource => ({ ...resource })),
+    emailQueue: []
   };
 
   const pool = {
@@ -149,6 +424,30 @@ function createFakePool(customHandlers = {}) {
         const id = state.resources.length ? Math.max(...state.resources.map(resource => resource.id)) + 1 : 1;
         state.resources.push({ id, title, category, resource_type, url, description, file_name, file_data, created_at: new Date().toISOString() });
         return { rows: [{ id }] };
+      }
+
+      if (/INSERT\s+INTO\s+email_queue/i.test(normalizedSql)) {
+        const [studentId, registrationNumber, studentName, emailAddress, registrationType, emailType, status] = params;
+        state.emailQueue.push({ student_id: studentId, registration_number: registrationNumber, student_name: studentName, email_address: emailAddress, registration_type: registrationType, email_type: emailType, status });
+        return { rows: [{ id: state.emailQueue.length, status, created_at: new Date().toISOString() }] };
+      }
+
+      if (/UPDATE\s+email_queue/i.test(normalizedSql)) {
+        const [status, retryCount, lastError, studentId, registrationNumber] = params;
+        state.emailQueue.filter(entry => entry.student_id === studentId && entry.registration_number === registrationNumber).forEach(entry => Object.assign(entry, { status, retry_count: retryCount, last_error: lastError }));
+        return { rows: [] };
+      }
+
+      if (/SELECT\s+student_name,\s*registration_number,\s*email_address/i.test(normalizedSql)) {
+        return { rows: state.emailQueue.filter(entry => ['PENDING', 'WAITING'].includes(entry.status)) };
+      }
+
+      if (/SELECT\s+COUNT\(\*\)\s+FILTER/i.test(normalizedSql)) {
+        return { rows: [{
+          sent: state.emailQueue.filter(entry => entry.status === 'SENT').length,
+          waiting: state.emailQueue.filter(entry => ['PENDING', 'WAITING'].includes(entry.status)).length,
+          failed: state.emailQueue.filter(entry => entry.status === 'FAILED').length
+        }] };
       }
 
       if (/SELECT\s+reg_no\s+FROM\s+students\s+WHERE\s+whatsapp\s*=\s*\$1/i.test(normalizedSql)) {
@@ -267,7 +566,7 @@ test('POST /api/students saves a student payload', async () => {
     const port = server.address().port;
     const response = await fetch(`http://127.0.0.1:${port}/api/students`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fullName: 'TEST USER',
         class: 'VII',
@@ -306,7 +605,7 @@ test('POST /api/students rejects duplicate whatsapp numbers', async () => {
     const port = server.address().port;
     const response = await fetch(`http://127.0.0.1:${port}/api/students`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fullName: 'TEST USER',
         class: 'VII',
@@ -362,7 +661,7 @@ test('PUT /api/students/:studentId updates the student record in the database', 
     const port = server.address().port;
     const response = await fetch(`http://127.0.0.1:${port}/api/students/IMTSE-10001`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fullName: 'UPDATED USER',
         class: 'VIII',
@@ -557,7 +856,7 @@ test('POST /api/results/upload calculates a senior 200-mark total with combined 
     const port = server.address().port;
     const response = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         results: [{
           registrationNo: 'IMTSE-10001',
@@ -585,6 +884,48 @@ test('POST /api/results/upload calculates a senior 200-mark total with combined 
   }
 });
 
+test('Result mutation endpoints require admin authorization', async () => {
+  const fakePool = createFakePool({
+    listStudents: [{ reg_no: 'IMTSE-SECURITY', full_name: 'SECURITY USER', student_class: 'VII', school_name: 'SECURITY SCHOOL' }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const endpoints = [
+      '/api/results/upload',
+      '/api/results/upload/primary',
+      '/api/results/upload/secondary',
+      '/api/results/IMTSE-SECURITY/verify',
+      '/api/results/IMTSE-SECURITY/publish',
+      '/api/results/publish-all'
+    ];
+    for (const endpoint of endpoints) {
+      const body = endpoint.includes('/upload') ? JSON.stringify({ results: [] }) : undefined;
+      const unauthenticated = await fetch(`${baseUrl}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      assert.equal(unauthenticated.status, 401, endpoint);
+      const forbidden = await fetch(`${baseUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${Buffer.from('student:wrong').toString('base64')}`, 'Content-Type': 'application/json' },
+        body
+      });
+      assert.equal(forbidden.status, 403, endpoint);
+    }
+
+    const adminUpload = await fetch(`${baseUrl}/api/results/upload`, {
+      method: 'POST', headers: { ...adminHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ results: [] })
+    });
+    assert.equal(adminUpload.status, 200);
+    const adminPublishAll = await fetch(`${baseUrl}/api/results/publish-all`, { method: 'POST', headers: adminHeaders });
+    assert.equal(adminPublishAll.status, 200);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('POST /api/results/upload calculates a junior 200-mark total', async () => {
   const fakePool = createFakePool({
     listStudents: [{
@@ -603,7 +944,7 @@ test('POST /api/results/upload calculates a junior 200-mark total', async () => 
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/results/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ results: [{
         registrationNo: 'IMTSE-20001',
         schoolName: 'JUNIOR SCHOOL',
@@ -640,7 +981,7 @@ test('Group-specific uploads reject wrong classes and validate zero, blank, and 
 
   const post = (path, result) => fetch(`http://127.0.0.1:${server.address().port}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...adminHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({ results: [result] })
   });
 
@@ -711,16 +1052,16 @@ test('Primary and secondary results share storage and Publish All publishes both
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const upload = (group, result) => fetch(`${baseUrl}/api/results/upload/${group}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ results: [result] })
+      method: 'POST', headers: { ...adminHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ results: [result] })
     });
     assert.equal((await upload('primary', { registrationNo: 'IMTSE-PUBLISH3', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40 })).status, 200);
     assert.equal((await upload('secondary', { registrationNo: 'IMTSE-PUBLISH7', marathi: 40, english: 40, mathsLogicalReasoning: 40, evsScience: 40, socialScience: 40 })).status, 200);
     assert.equal(global.__student_results.filter(result => result.status === 'DRAFT').length, 2);
 
     for (const regNo of ['IMTSE-PUBLISH3', 'IMTSE-PUBLISH7']) {
-      assert.equal((await fetch(`${baseUrl}/api/results/${regNo}/verify`, { method: 'POST' })).status, 200);
+      assert.equal((await fetch(`${baseUrl}/api/results/${regNo}/verify`, { method: 'POST', headers: adminHeaders })).status, 200);
     }
-    const publishResponse = await fetch(`${baseUrl}/api/results/publish-all`, { method: 'POST' });
+    const publishResponse = await fetch(`${baseUrl}/api/results/publish-all`, { method: 'POST', headers: adminHeaders });
     assert.equal(publishResponse.status, 200);
     assert.equal((await publishResponse.json()).published, 2);
     assert.equal(global.__student_results.every(result => result.status === 'PUBLISHED'), true);
@@ -774,7 +1115,7 @@ test('POST /api/results/upload rejects a mismatched school name and keeps multi-
     const port = server.address().port;
     const response = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         results: [{
           registrationNo: 'IMTSE-10001',
@@ -864,12 +1205,14 @@ test('GET /api/results/me only returns the authenticated student result', async 
 
   try {
     const port = server.address().port;
-    const response = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-10001&dob=2014-08-15`);
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const studentHeaders = await loginStudent(baseUrl, '1234567890', '2014-08-15');
+    const response = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-10001&dob=2014-08-15`, { headers: studentHeaders });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.student.regNo, 'IMTSE-10001');
 
-    const forbidden = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-99999&dob=2014-08-15`);
+    const forbidden = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-99999&dob=2014-08-15`, { headers: studentHeaders });
     assert.equal(forbidden.status, 403);
   } finally {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
@@ -931,7 +1274,7 @@ test('Result template and upload normalize Registration No headers and ignore bl
 
     const uploadRes = await fetch(`http://127.0.0.1:${port}/api/results/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         results: [
             { 'Reg. No': 'IMTSE-34990', Marathi: '30', English: '30', 'Maths & Logical Reasoning': '30', EVS: '30', 'Social Science': '30', 'School Name': 'ABC School' },
@@ -982,7 +1325,7 @@ test('Generated result template uploads primary and secondary students with clas
 
     const uploadResponse = await fetch(`${baseUrl}/api/results/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ results: [
         makeRow(primaryTemplateRows[0], {
           'Registration No': 'IMTSE-30001', 'School Name': 'PRIMARY SCHOOL',
@@ -1043,7 +1386,7 @@ test('Exact IMTSE-62440 CSV fixture preserves marks and reports over-limit value
     });
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/results/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ results: [canonicalRow] })
     });
 
@@ -1131,13 +1474,16 @@ test('GET /api/results/me opens only published results to the matched student', 
 
   try {
     const port = server.address().port;
-    const unpublished = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-10001&dob=2014-08-15`);
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const unpublishedHeaders = await loginStudent(baseUrl, '1234567890', '2014-08-15');
+    const unpublished = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-10001&dob=2014-08-15`, { headers: unpublishedHeaders });
     assert.equal(unpublished.status, 200);
     const unpublishedPayload = await unpublished.json();
     assert.equal(unpublishedPayload.published, false);
     assert.equal(unpublishedPayload.result, null);
 
-    const published = await fetch(`http://127.0.0.1:${port}/api/results/me?regNo=IMTSE-10002&dob=2014-08-14`);
+    const publishedHeaders = await loginStudent(baseUrl, '1111111111', '2014-08-14');
+    const published = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-10002&dob=2014-08-14`, { headers: publishedHeaders });
     assert.equal(published.status, 200);
     const publishedPayload = await published.json();
     assert.equal(publishedPayload.published, true);
@@ -1234,6 +1580,33 @@ test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', asy
   }
 });
 
+test('GET /api/certificate returns an approved student certificate and rejects wrong DOB', async () => {
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-CERT-1', full_name: 'CERTIFICATE STUDENT', student_class: 'IV', medium: 'English',
+      school_name: 'CERTIFICATE SCHOOL', dob: '2015-08-15', whatsapp: '9888888888', status: 'Approved & Active (Fees Paid)'
+    }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const studentHeaders = await loginStudent(baseUrl, '9888888888', '2015-08-15');
+    const denied = await fetch(`${baseUrl}/api/certificate?regNo=IMTSE-CERT-1&dob=2014-08-15`, { headers: studentHeaders });
+    assert.equal(denied.status, 403);
+    const response = await fetch(`${baseUrl}/api/certificate?regNo=IMTSE-CERT-1&dob=2015-08-15`, { headers: studentHeaders });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /application\/pdf/);
+    assert.match(response.headers.get('content-disposition'), /IMTSE_Certificate_IMTSE-CERT-1\.pdf/);
+    assert.ok((await response.arrayBuffer()).byteLength > 500);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date', async () => {
   const previousReleaseState = global.__release_controls;
   global.__release_controls = { hallTicketReleased: true, resultReleased: false };
@@ -1324,7 +1697,7 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
   const fakePool = createFakePool({
     listStudents: [{
       reg_no: 'IMTSE-HALL-1', full_name: 'HALL USER', student_class: 'VII', medium: 'English',
-      school_name: 'REGISTERED SCHOOL', dob: '2014-08-15', status: 'Approved & Active (Fees Paid)',
+      school_name: 'REGISTERED SCHOOL', dob: '2014-08-15', whatsapp: '9777777777', status: 'Approved & Active (Fees Paid)',
       hall_ticket_released_at: '2026-09-18T00:00:00.000Z'
     }]
   });
@@ -1335,10 +1708,11 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
 
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const beforeRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
+    const studentHeaders = await loginStudent(baseUrl, '9777777777', '2014-08-15');
+    const beforeRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`, { headers: studentHeaders });
     assert.equal(beforeRelease.status, 403);
     global.__release_controls.hallTicketReleased = true;
-    const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`);
+    const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`, { headers: studentHeaders });
     assert.equal(afterRelease.status, 200);
     assert.equal((await afterRelease.json()).examCenter, 'Matoshree Tanubai Dagadu Khade English School and Junior College, Sainandan Colony, Near Rama Udyan, Miraj');
   } finally {
@@ -1358,7 +1732,7 @@ test('Student result readback maps PostgreSQL subject columns and preserves zero
     result_released_at: '2026-09-18T00:00:00.000Z'
   }];
   const fakePool = createFakePool({
-    listStudents: [{ reg_no: 'IMTSE-RESULT-1', full_name: 'RESULT USER', student_class: 'VII', medium: 'English', dob: '2014-08-15', status: 'Approved' }]
+    listStudents: [{ reg_no: 'IMTSE-RESULT-1', full_name: 'RESULT USER', student_class: 'VII', medium: 'English', dob: '2014-08-15', whatsapp: '9666666666', status: 'Approved' }]
   });
   const app = createServer({ pool: fakePool });
   const server = await new Promise(resolve => {
@@ -1366,7 +1740,9 @@ test('Student result readback maps PostgreSQL subject columns and preserves zero
   });
 
   try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/results/me?regNo=IMTSE-RESULT-1&dob=2014-08-15`);
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const studentHeaders = await loginStudent(baseUrl, '9666666666', '2014-08-15');
+    const response = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-RESULT-1&dob=2014-08-15`, { headers: studentHeaders });
     assert.equal(response.status, 200);
     const result = (await response.json()).result;
     assert.deepEqual({ marathi: result.marathi, english: result.english, maths: result.maths, evsScience: result.evsScience, socialScience: result.socialScience, logicalReasoning: result.logicalReasoning, totalMarks: result.totalMarks }, {
