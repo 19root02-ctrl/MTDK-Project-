@@ -138,6 +138,51 @@ test('Manual DOB validation maps the exact header and preserves Excel date cells
   }
 });
 
+test('Manual DOB validation supports school DD-MM-YYYY and MM/DD/YY formats', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const makeRow = (serial, dob, mobile) => ({
+      'Sr. No.': serial,
+      'Name of the Student': `DOB Student ${serial}`,
+      'Std.': 'V',
+      'Date of Birth': dob,
+      Medium: 'English',
+      'School & School Address': 'ABC School',
+      'Mob. No.': mobile,
+      'Email ID': `dob-${serial}@example.com`,
+      'Payment Mode': 'Cash'
+    });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: [
+        makeRow(1, '19-02-2008', '9876543217'),
+        makeRow(2, '29-12-2012', '9876543218'),
+        makeRow(3, '28-12-2004', '9876543219'),
+        makeRow(4, '2/19/08', '9876543220'),
+        makeRow(5, '', '9876543221'),
+        makeRow(6, '31-02-2015', '9876543222')
+      ] })
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.totalRecords, 6);
+    assert.equal(payload.validRecords, 4);
+    assert.equal(payload.invalidRecords, 2);
+    assert.deepEqual(payload.preview.slice(0, 4).map(row => row.dob), [
+      '2008-02-19', '2012-12-29', '2004-12-28', '2008-02-19'
+    ]);
+    assert.match(payload.errors.find(error => error.row === 5).message, /Missing DOB/);
+    assert.match(payload.errors.find(error => error.row === 6).message, /Invalid DOB/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('Manual preview reports all missing DOB rows as invalid', async () => {
   const app = createServer({ pool: createFakePool() });
   const server = await new Promise(resolve => {

@@ -557,8 +557,17 @@ function normalizeDate(value) {
   const isoLike = candidate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoLike) return toIsoDate(isoLike[1], isoLike[2], isoLike[3]);
 
-  const dmMatch = asString.match(/^(\d{2})[./-](\d{2})[./-](\d{4})$/);
-  if (dmMatch) return toIsoDate(dmMatch[3], dmMatch[2], dmMatch[1]);
+  const separatedMatch = asString.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/);
+  if (separatedMatch) {
+    const first = Number(separatedMatch[1]);
+    const second = Number(separatedMatch[2]);
+    const rawYear = separatedMatch[3];
+    const year = rawYear.length === 2 ? (Number(rawYear) <= 49 ? 2000 + Number(rawYear) : 1900 + Number(rawYear)) : Number(rawYear);
+    const monthFirst = second > 12 && first >= 1 && first <= 12;
+    const day = monthFirst ? second : first;
+    const month = monthFirst ? first : second;
+    return toIsoDate(year, month, day);
+  }
 
   const monthNames = {
     january: 1,
