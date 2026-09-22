@@ -2180,9 +2180,11 @@ async function confirmManualRegistrationImport() {
     await loadEmailStatusPanel();
 }
 
-async function loadEmailStatusPanel() {
+async function loadEmailStatusPanel(showWaiting = false) {
     const summaryContainer = document.getElementById('emailStatusSummary');
     const tableBody = document.getElementById('waitingEmailsTable');
+    const details = document.getElementById('waitingEmailsDetails');
+    const toggle = document.getElementById('waitingEmailsToggle');
     if (!summaryContainer || !tableBody) return;
     try {
         const [summaryResponse, waitingResponse] = await Promise.all([
@@ -2196,8 +2198,24 @@ async function loadEmailStatusPanel() {
             ['Sent', summary.sent || 0], ['Waiting / Pending', summary.waiting || 0], ['Failed', summary.failed || 0]
         ].map(([label, value]) => `<div class="summary-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
         tableBody.innerHTML = waiting.length ? waiting.map(row => `<tr><td>${escapeAdminText(row.student_name)}</td><td>${escapeAdminText(row.registration_number)}</td><td>${escapeAdminText(row.email_address)}</td><td>${escapeAdminText(row.registration_type)}</td><td>${escapeAdminText(row.status)}</td><td>${escapeAdminText(row.created_at)}</td></tr>`).join('') : '<tr><td colspan="6">No waiting emails.</td></tr>';
+        if (showWaiting && details) {
+            details.classList.remove('hidden');
+            if (toggle) toggle.textContent = 'Hide Waiting Emails';
+        }
     } catch (error) {
         tableBody.innerHTML = `<tr><td colspan="6">${escapeAdminText(error.message || 'Email status unavailable.')}</td></tr>`;
+    }
+}
+
+function viewWaitingEmails() {
+    const details = document.getElementById('waitingEmailsDetails');
+    const toggle = document.getElementById('waitingEmailsToggle');
+    if (!details || !toggle) return;
+    if (details.classList.contains('hidden')) {
+        loadEmailStatusPanel(true);
+    } else {
+        details.classList.add('hidden');
+        toggle.textContent = 'View Waiting Emails';
     }
 }
 
@@ -2225,6 +2243,7 @@ function showAdminPanel(panelName) {
         loadResultSummary();
         loadResultRows();
     }
+    if (panelName === 'manual') loadEmailStatusPanel();
     if (panelName === 'release') loadReleaseStatus();
 }
 

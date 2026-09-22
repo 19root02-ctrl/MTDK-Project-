@@ -1113,11 +1113,11 @@
                                             <h3>Email Status</h3>
                                             <p>Monitor registration email delivery without blocking student access.</p>
                                         </div>
-                                        <button type="button" class="btn-secondary" onclick="loadEmailStatusPanel()">Refresh</button>
                                     </div>
                                     <div id="emailStatusSummary" class="result-summary-grid"></div>
-                                    <h4>Waiting Emails</h4>
-                                    <div class="table-wrapper">
+                                    <button type="button" id="waitingEmailsToggle" class="btn-secondary" onclick="viewWaitingEmails()">View Waiting Emails</button>
+                                    <div id="waitingEmailsDetails" class="table-wrapper hidden">
+                                        <h4>Waiting Emails</h4>
                                         <table class="data-table">
                                             <thead><tr><th>Student Name</th><th>Registration No.</th><th>Email</th><th>Registration Type</th><th>Status</th><th>Created At</th></tr></thead>
                                             <tbody id="waitingEmailsTable"></tbody>
