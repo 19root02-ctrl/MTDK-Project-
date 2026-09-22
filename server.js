@@ -2233,6 +2233,7 @@ function createServer(options = {}) {
       const studentPayload = {
         regNo: candidate.reg_no || candidate.regNo,
         name: buildStudentFullName(candidate),
+        schoolName: candidate.school_name || candidate.schoolName || result.schoolName || '',
         className: candidate.student_class || candidate.class,
         medium: candidate.medium,
         status: candidate.status

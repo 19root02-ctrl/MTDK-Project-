@@ -362,6 +362,21 @@ button {
     font-size: 0.95rem;
 }
 
+.manual-registration-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.manual-email-status {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-light);
+}
+
 .table-wrapper {
     margin-top: 18px;
     overflow-x: auto;
@@ -3089,6 +3104,10 @@ input.invalid {
 }
 
 @media (max-width: 768px) {
+    .manual-registration-layout {
+        grid-template-columns: 1fr;
+    }
+
     .nav-menu {
         display: none; /* Hide standard menu on mobile */
         position: absolute;

@@ -2204,20 +2204,19 @@ async function loadEmailStatusPanel() {
 function showAdminPanel(panelName) {
     const studentPanel = document.getElementById("adminStudentPanel");
     const manualPanel = document.getElementById("adminManualPanel");
-    const emailPanel = document.getElementById("adminEmailPanel");
     const resourcePanel = document.getElementById("adminResourcePanel");
     const releasePanel = document.getElementById("adminReleasePanel");
     const resultPanel = document.getElementById("adminResultPanel");
     const buttons = document.querySelectorAll(".panel-toggle");
 
-    const visiblePanel = panelName === 'manual' ? manualPanel : panelName === 'emails' ? emailPanel : panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : panelName === 'release' ? releasePanel : studentPanel;
-    const hiddenPanels = [studentPanel, manualPanel, emailPanel, resourcePanel, resultPanel, releasePanel].filter(panel => panel && panel !== visiblePanel);
+    const visiblePanel = panelName === 'manual' ? manualPanel : panelName === 'resources' ? resourcePanel : panelName === 'results' ? resultPanel : panelName === 'release' ? releasePanel : studentPanel;
+    const hiddenPanels = [studentPanel, manualPanel, resourcePanel, resultPanel, releasePanel].filter(panel => panel && panel !== visiblePanel);
 
     if (visiblePanel) visiblePanel.classList.remove('hidden');
     hiddenPanels.forEach(panel => panel && panel.classList.add('hidden'));
 
     buttons.forEach(button => {
-        const label = panelName === 'manual' ? 'Manual Registration' : panelName === 'emails' ? 'Email Status' : panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : panelName === 'release' ? 'Exam Release Controls' : 'Student Profiles';
+        const label = panelName === 'manual' ? 'Manual Registration' : panelName === 'resources' ? 'Study Resources' : panelName === 'results' ? 'Result Management' : panelName === 'release' ? 'Exam Release Controls' : 'Student Profiles';
         const isActive = button.textContent.includes(label);
         button.classList.toggle('active', isActive);
     });
@@ -2226,7 +2225,6 @@ function showAdminPanel(panelName) {
         loadResultSummary();
         loadResultRows();
     }
-    if (panelName === 'emails') loadEmailStatusPanel();
     if (panelName === 'release') loadReleaseStatus();
 }
 
