@@ -364,9 +364,90 @@ button {
 
 .manual-registration-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 0.8fr);
     gap: 24px;
     align-items: start;
+    min-width: 0;
+}
+
+#adminManualPanel {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+#adminManualPanel > .manual-registration-layout > div,
+.manual-email-status {
+    min-width: 0;
+}
+
+#adminManualPanel .table-wrapper {
+    overflow-x: visible;
+    min-width: 0;
+}
+
+#adminManualPanel .data-table {
+    table-layout: fixed;
+    max-width: 100%;
+}
+
+#adminManualPanel .data-table th,
+#adminManualPanel .data-table td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(1),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(1) {
+    width: 7%;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(2),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(2) {
+    width: 17%;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(3),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(3) {
+    width: 10%;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(4),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(4) {
+    width: 13%;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(5),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(5) {
+    width: 14%;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(6),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(6) {
+    width: 24%;
+}
+
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(7),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(7) {
+    width: 15%;
+}
+
+.manual-email-status .result-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.manual-email-status .summary-card {
+    min-width: 0;
+    padding: 12px 10px;
+}
+
+.manual-email-status .summary-card span,
+.manual-email-status .summary-card strong {
+    overflow-wrap: anywhere;
+}
+
+.manual-email-status #waitingEmailsDetails .data-table {
+    font-size: 0.78rem;
 }
 
 .manual-email-status {
@@ -3104,6 +3185,10 @@ input.invalid {
 }
 
 @media (max-width: 768px) {
+    #adminManualPanel {
+        grid-column: auto;
+    }
+
     .manual-registration-layout {
         grid-template-columns: 1fr;
     }
