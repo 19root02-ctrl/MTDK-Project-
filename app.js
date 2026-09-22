@@ -1116,7 +1116,7 @@ function showDashboardView(student) {
         existingNotice.style.background = "#f0fdf4";
         existingNotice.style.color = "#166534";
         existingNotice.style.border = "1px solid #86efac";
-            existingNotice.innerHTML = "Your registration is <strong>approved</strong>! Admit card available soon.";
+        existingNotice.innerHTML = "Your registration is <strong>approved</strong>!";
     } else {
         existingNotice.style.display = "none";
     }
@@ -1127,9 +1127,7 @@ function showDashboardView(student) {
 
     function applyUnlockLogic(isUnlocked) {
         if (isApproved) {
-            existingNotice.innerHTML = isUnlocked
-                ? "Your registration is <strong>approved</strong>! Hall Ticket is now available."
-                : `Your registration is <strong>approved</strong>! Hall Ticket will be available on ${examConfiguration.getHallTicketUnlockDateDisplay()}.`;
+            existingNotice.innerHTML = "Your registration is <strong>approved</strong>!";
         }
 
         if (admitCardBtn) {
@@ -1994,35 +1992,6 @@ function downloadHallTicket(eventOrStudent = null, studentOverride = null) {
             alert(error.message || "Error checking Hall Ticket availability. Please try again.");
         })
         ;
-}
-
-function downloadCertificate(eventOrStudent = null, studentOverride = null) {
-    const event = eventOrStudent && typeof eventOrStudent.preventDefault === "function"
-        ? eventOrStudent
-        : null;
-    if (event) event.preventDefault();
-    const student = event ? studentOverride || activeStudentSession : eventOrStudent || studentOverride || activeStudentSession;
-    if (!student) {
-        alert('Please login to download your certificate.');
-        return;
-    }
-    const regNo = student.regNo || student.reg_no || '';
-    const dob = student.dob || '';
-    fetch(`/api/certificate?regNo=${encodeURIComponent(regNo)}&dob=${encodeURIComponent(dob)}`, { credentials: 'same-origin' })
-        .then(response => {
-            if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Certificate is unavailable.'); });
-            return response.blob();
-        })
-        .then(blob => {
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `IMTSE_Certificate_${String(regNo).replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(link.href);
-        })
-        .catch(error => alert(error.message || 'Certificate download failed.'));
 }
 
 function populateAdminCategoryOptions() {
