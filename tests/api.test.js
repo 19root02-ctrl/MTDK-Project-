@@ -87,6 +87,88 @@ test('Manual registration preview rejects rows missing DOB and invalid DOB', asy
   }
 });
 
+test('Manual DOB validation maps the exact header and preserves Excel date cells', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: [
+        {
+          'Sr. No.': 1, 'Name of the Student': 'ISO DOB', 'Std.': 'V', 'Date of Birth': '2015-08-15',
+          Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543212',
+          'Email ID': 'iso-dob@example.com', 'Payment Mode': 'Cash'
+        },
+        {
+          'Sr. No.': 2, 'Name of the Student': 'Excel Date DOB', 'Std.': 'VI', 'Date of Birth': new Date('2015-08-15T00:00:00Z'),
+          Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543213',
+          'Email ID': 'excel-dob@example.com', 'Payment Mode': 'Cash'
+        },
+        {
+          'Sr. No.': 3, 'Name of the Student': 'Slash DOB', 'Std.': 'VII', 'Date of Birth': '15/08/2015',
+          Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543214',
+          'Email ID': 'slash-dob@example.com', 'Payment Mode': 'Cash'
+        },
+        {
+          'Sr. No.': 4, 'Name of the Student': 'Missing DOB', 'Std.': 'VIII', 'Date of Birth': '',
+          Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543215',
+          'Email ID': 'missing-dob@example.com', 'Payment Mode': 'Cash'
+        },
+        {
+          'Sr. No.': 5, 'Name of the Student': 'Invalid DOB', 'Std.': 'IX', 'Date of Birth': '31/02/2015',
+          Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543216',
+          'Email ID': 'invalid-dob@example.com', 'Payment Mode': 'Cash'
+        }
+      ] })
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.totalRecords, 5);
+    assert.equal(payload.validRecords, 3);
+    assert.equal(payload.invalidRecords, 2);
+    assert.deepEqual(payload.preview.slice(0, 3).map(row => row.dob), ['2015-08-15', '2015-08-15', '2015-08-15']);
+    assert.match(payload.errors.find(error => error.row === 4).message, /Missing DOB/);
+    assert.match(payload.errors.find(error => error.row === 5).message, /Invalid DOB/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Manual preview reports all missing DOB rows as invalid', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseRow = {
+      'Name of the Student': 'Missing DOB', 'Std.': 'V', 'Date of Birth': '', Medium: 'English',
+      'School & School Address': 'ABC School', 'Mob. No.': '987654329', 'Email ID': 'missing@example.com', 'Payment Mode': 'Cash'
+    };
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: [
+        { ...baseRow, 'Sr. No.': 1, 'Mob. No.': '9876543201', 'Email ID': 'missing1@example.com' },
+        { ...baseRow, 'Sr. No.': 2, 'Mob. No.': '9876543202', 'Email ID': 'missing2@example.com' },
+        { ...baseRow, 'Sr. No.': 3, 'Mob. No.': '9876543203', 'Email ID': 'missing3@example.com' }
+      ] })
+    });
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.equal(payload.totalRecords, 3);
+    assert.equal(payload.validRecords, 0);
+    assert.equal(payload.invalidRecords, 3);
+    assert.equal(payload.errors.length, 3);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('Student login uses Mobile + DOB and prevents cross-student result access', async () => {
   const fakePool = createFakePool({
     listStudents: [

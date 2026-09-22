@@ -181,10 +181,10 @@ function getManualField(row = {}, aliases = [], fallbackKeys = []) {
 
   for (const key of candidates) {
     if (Object.prototype.hasOwnProperty.call(normalized, key)) {
-      return String(normalized[key] ?? '').trim();
+      return normalized[key] ?? '';
     }
     if (row && Object.prototype.hasOwnProperty.call(row, key)) {
-      return String(row[key] ?? '').trim();
+      return row[key] ?? '';
     }
   }
   return '';
@@ -530,28 +530,35 @@ async function sendApprovalEmail(student) {
 
 function normalizeDate(value) {
   if (!value) return null;
+  const toIsoDate = (year, month, day) => {
+    const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    if (parsed.getUTCFullYear() !== Number(year) || parsed.getUTCMonth() + 1 !== Number(month) || parsed.getUTCDate() !== Number(day)) return null;
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
   if (value instanceof Date) {
     const yyyy = value.getFullYear();
-    const mm = String(value.getMonth() + 1).padStart(2, '0');
-    const dd = String(value.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+    return toIsoDate(yyyy, value.getMonth() + 1, value.getDate());
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const excelDate = new Date(Date.UTC(1899, 11, 30) + Math.round(value * 86400000));
+    return toIsoDate(excelDate.getUTCFullYear(), excelDate.getUTCMonth() + 1, excelDate.getUTCDate());
   }
 
   const asString = String(value).trim();
   if (!asString) return null;
 
   const isoMatch = asString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) return asString;
+  if (isoMatch) return toIsoDate(isoMatch[1], isoMatch[2], isoMatch[3]);
 
   const tIndex = asString.indexOf('T');
   let candidate = asString;
   if (tIndex !== -1) candidate = asString.substring(0, tIndex);
   if (candidate.indexOf(' ') !== -1) candidate = candidate.split(' ')[0];
   const isoLike = candidate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoLike) return candidate;
+  if (isoLike) return toIsoDate(isoLike[1], isoLike[2], isoLike[3]);
 
   const dmMatch = asString.match(/^(\d{2})[./-](\d{2})[./-](\d{4})$/);
-  if (dmMatch) return `${dmMatch[3]}-${dmMatch[2]}-${dmMatch[1]}`;
+  if (dmMatch) return toIsoDate(dmMatch[3], dmMatch[2], dmMatch[1]);
 
   const monthNames = {
     january: 1,
@@ -574,9 +581,7 @@ function normalizeDate(value) {
     const monthRaw = humanMatch[2].toLowerCase();
     const year = Number(humanMatch[3]);
     const month = monthNames[monthRaw];
-    if (month && day >= 1 && day <= 31) {
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    }
+    if (month && day >= 1 && day <= 31) return toIsoDate(year, month, day);
   }
   return null;
 }
@@ -1396,7 +1401,8 @@ function createServer(options = {}) {
       const serial = getManualField(row, ['Sr. No.', 'Sr No', 'S. No.'], ['serialNo']);
       const name = safeNormalizeName(getManualField(row, ['Name of the Student', 'Student Name'], ['name']));
       const standard = String(getManualField(row, ['Std.', 'Std', 'Class'], ['standard']) || '').trim();
-      const dob = String(getManualField(row, ['Date of Birth', 'DOB'], ['dob', 'dateOfBirth']) || '').trim();
+      const dobValue = getManualField(row, ['Date of Birth', 'DOB'], ['dob', 'dateOfBirth']);
+      const dob = dobValue instanceof Date || typeof dobValue === 'number' ? dobValue : String(dobValue || '').trim();
       const medium = String(getManualField(row, ['Medium'], ['medium']) || '').trim();
       const school = String(getManualField(row, ['School & School Address', 'School Name', 'School & Address'], ['school', 'schoolName']) || '').trim();
       const mobile = safeNormalizeMob(getManualField(row, ['Mob. No.', 'Mob No', 'Mobile No', 'Mobile Number', 'Phone'], ['mobile', 'phone', 'whatsapp']));
@@ -1407,7 +1413,8 @@ function createServer(options = {}) {
       if (!name) rowErrors.push('Missing student name');
       if (!standard || !getClassNumber(standard)) rowErrors.push('Invalid Standard');
       const normalizedDob = normalizeDate(dob);
-      if (!normalizedDob) rowErrors.push('Missing DOB');
+      if (!String(dob || '').trim()) rowErrors.push('Missing DOB');
+      else if (!normalizedDob) rowErrors.push('Invalid DOB');
       else {
         const parsedDate = new Date(`${normalizedDob}T00:00:00`);
         if (Number.isNaN(parsedDate.getTime())) rowErrors.push('Invalid DOB');
@@ -1464,6 +1471,7 @@ function createServer(options = {}) {
           success: false,
           message: 'Manual registration Excel contains no valid records.',
           validRecords: 0,
+          invalidRecords: validation.invalidRecords,
           totalRecords: validation.totalRecords,
           errors: validation.errors,
           preview: validation.preview
