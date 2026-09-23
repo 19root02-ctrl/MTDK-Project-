@@ -474,6 +474,70 @@ test('Manual students flow through primary and secondary result release ownershi
   }
 });
 
+test('Result uploads replace only their group and require a fresh result release', async () => {
+  const previousStudents = global.__students;
+  const previousResults = global.__student_results;
+  const previousReleaseState = global.__release_controls;
+  global.__students = [
+    { reg_no: 'IMTSE-PRIMARY-1', full_name: 'PRIMARY CURRENT', student_class: 'III', medium: 'English', school_name: 'PRIMARY SCHOOL', dob: '2016-08-15', whatsapp: '8111111111', status: 'Approved' },
+    { reg_no: 'IMTSE-PRIMARY-2', full_name: 'PRIMARY OLD', student_class: 'IV', medium: 'English', school_name: 'PRIMARY SCHOOL', dob: '2015-08-16', whatsapp: '8111111112', status: 'Approved' },
+    { reg_no: 'IMTSE-SECONDARY-1', full_name: 'SECONDARY CURRENT', student_class: 'VII', medium: 'English', school_name: 'SECONDARY SCHOOL', dob: '2014-08-17', whatsapp: '8222222222', status: 'Approved' }
+  ];
+  global.__student_results = [
+    { reg_no: 'IMTSE-PRIMARY-1', student_name: 'PRIMARY CURRENT', result_group: 'PRIMARY', total_marks: 100, status: 'PUBLISHED', result_released_at: '2026-09-18T00:00:00.000Z' },
+    { reg_no: 'IMTSE-PRIMARY-2', student_name: 'PRIMARY OLD', result_group: 'PRIMARY', total_marks: 90, status: 'PUBLISHED', result_released_at: '2026-09-18T00:00:00.000Z' },
+    { reg_no: 'IMTSE-SECONDARY-1', student_name: 'SECONDARY CURRENT', result_group: 'SECONDARY', total_marks: 110, status: 'PUBLISHED', result_released_at: '2026-09-18T00:00:00.000Z' }
+  ];
+  global.__release_controls = { hallTicketReleased: true, resultReleased: true };
+  const app = createServer({ pool: createFakePool({ listStudents: global.__students }) });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const upload = (group, result) => fetch(`${baseUrl}/api/results/upload/${group}`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: [result] })
+    });
+    const primaryResult = { registrationNo: 'IMTSE-PRIMARY-1', schoolName: 'PRIMARY SCHOOL', marathi: 40, english: 40, maths: 40, evs: 40, logicalReasoning: 40 };
+    const secondaryResult = { registrationNo: 'IMTSE-SECONDARY-1', schoolName: 'SECONDARY SCHOOL', marathi: 35, english: 35, mathsLogicalReasoning: 40, evsScience: 40, socialScience: 40 };
+
+    assert.equal((await upload('primary', primaryResult)).status, 200);
+    assert.equal(global.__release_controls.resultReleased, false);
+    assert.deepEqual(global.__student_results.map(result => result.reg_no).sort(), ['IMTSE-PRIMARY-1', 'IMTSE-SECONDARY-1']);
+    const replacedPrimary = global.__student_results.find(result => result.reg_no === 'IMTSE-PRIMARY-1');
+    assert.equal(replacedPrimary.status, 'DRAFT');
+    assert.equal(replacedPrimary.result_released_at, null);
+    assert.equal(global.__student_results.find(result => result.reg_no === 'IMTSE-SECONDARY-1').status, 'PUBLISHED');
+
+    assert.equal((await upload('secondary', secondaryResult)).status, 200);
+    assert.equal(global.__student_results.filter(result => result.reg_no === 'IMTSE-PRIMARY-1').length, 1);
+    assert.equal(global.__student_results.find(result => result.reg_no === 'IMTSE-PRIMARY-1').status, 'DRAFT');
+
+    const primaryHeaders = await loginStudent(baseUrl, '8111111111', '2016-08-15');
+    const beforeRelease = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-PRIMARY-1&dob=2016-08-15`, { headers: primaryHeaders });
+    assert.equal((await beforeRelease.json()).published, false);
+    assert.equal((await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-SECONDARY-1&dob=2016-08-15`, { headers: primaryHeaders })).status, 403);
+
+    assert.equal((await fetch(`${baseUrl}/api/results/IMTSE-PRIMARY-1/verify`, { method: 'POST', headers: adminHeaders })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/results/IMTSE-PRIMARY-1/publish`, { method: 'POST', headers: adminHeaders })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/results/IMTSE-SECONDARY-1/verify`, { method: 'POST', headers: adminHeaders })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/results/IMTSE-SECONDARY-1/publish`, { method: 'POST', headers: adminHeaders })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/admin/release/result`, { method: 'POST', headers: adminHeaders })).status, 200);
+    const afterRelease = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-PRIMARY-1&dob=2016-08-15`, { headers: primaryHeaders });
+    const afterReleasePayload = await afterRelease.json();
+    assert.equal(afterReleasePayload.published, true);
+    assert.equal(afterReleasePayload.result.totalMarks, 200);
+  } finally {
+    global.__students = previousStudents;
+    global.__student_results = previousResults;
+    global.__release_controls = previousReleaseState;
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});
+
 test('Global release controls require admin access and release Hall Tickets/results together', async () => {
   const previousResults = global.__student_results;
   global.__student_results = [
@@ -1093,6 +1157,59 @@ test('Result mutation endpoints require admin authorization', async () => {
     const adminPublishAll = await fetch(`${baseUrl}/api/results/publish-all`, { method: 'POST', headers: adminHeaders });
     assert.equal(adminPublishAll.status, 200);
   } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('DELETE /api/results/:regNo deletes only the result and preserves student access', async () => {
+  const previousStudents = global.__students;
+  const previousResults = global.__student_results;
+  const previousReleaseState = global.__release_controls;
+  const students = [
+    { reg_no: 'IMTSE-DELETE-A', full_name: 'DELETE STUDENT A', student_class: 'VII', medium: 'English', school_name: 'SCHOOL A', dob: '2014-08-15', whatsapp: '9333333333', status: 'Approved & Active (Fees Paid)', hall_ticket_released_at: '2026-09-23T00:00:00.000Z' },
+    { reg_no: 'IMTSE-DELETE-B', full_name: 'DELETE STUDENT B', student_class: 'VII', medium: 'English', school_name: 'SCHOOL B', dob: '2014-08-16', whatsapp: '9444444444', status: 'Approved & Active (Fees Paid)', hall_ticket_released_at: '2026-09-23T00:00:00.000Z' }
+  ];
+  global.__students = students;
+  global.__student_results = [
+    { reg_no: 'IMTSE-DELETE-A', student_name: 'DELETE STUDENT A', status: 'PUBLISHED', total_marks: 180, result_released_at: '2026-09-23T00:00:00.000Z' },
+    { reg_no: 'IMTSE-DELETE-B', student_name: 'DELETE STUDENT B', status: 'PUBLISHED', total_marks: 170, result_released_at: '2026-09-23T00:00:00.000Z' }
+  ];
+  global.__release_controls = { hallTicketReleased: true, resultReleased: true };
+  const app = createServer({ pool: createFakePool({ listStudents: students }) });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const unauthenticated = await fetch(`${baseUrl}/api/results/IMTSE-DELETE-A`, { method: 'DELETE' });
+    assert.equal(unauthenticated.status, 401);
+
+    const studentHeaders = await loginStudent(baseUrl, '9333333333', '2014-08-15');
+    const studentDelete = await fetch(`${baseUrl}/api/results/IMTSE-DELETE-A`, { method: 'DELETE', headers: studentHeaders });
+    assert.equal(studentDelete.status, 401);
+
+    const deleted = await fetch(`${baseUrl}/api/results/IMTSE-DELETE-A`, { method: 'DELETE', headers: adminHeaders });
+    assert.equal(deleted.status, 200);
+    assert.deepEqual(await deleted.json(), { success: true, message: 'Result deleted successfully.' });
+    assert.equal(global.__student_results.some(result => result.reg_no === 'IMTSE-DELETE-A'), false);
+    assert.equal(global.__student_results.some(result => result.reg_no === 'IMTSE-DELETE-B'), true);
+    assert.equal(global.__students.some(student => student.reg_no === 'IMTSE-DELETE-A'), true);
+
+    const unavailableResult = await fetch(`${baseUrl}/api/results/me?regNo=IMTSE-DELETE-A&dob=2014-08-15`, { headers: studentHeaders });
+    assert.equal(unavailableResult.status, 200);
+    assert.equal((await unavailableResult.json()).published, false);
+
+    const hallTicket = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-DELETE-A&dob=2014-08-15`, { headers: studentHeaders });
+    assert.equal(hallTicket.status, 200);
+
+    const missing = await fetch(`${baseUrl}/api/results/IMTSE-MISSING`, { method: 'DELETE', headers: adminHeaders });
+    assert.equal(missing.status, 404);
+    assert.equal(global.__students.some(student => student.reg_no === 'IMTSE-MISSING'), false);
+  } finally {
+    global.__students = previousStudents;
+    global.__student_results = previousResults;
+    global.__release_controls = previousReleaseState;
     await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
 });
@@ -1722,7 +1839,7 @@ test('POST /api/students/:studentId/approve sends an approval email', async () =
 
 test('GET /api/hall-ticket/status returns locked status BEFORE unlock date', async () => {
   const previousReleaseState = global.__release_controls;
-  global.__release_controls = { hallTicketReleased: true, resultReleased: false };
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
   const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const futureDay = String(futureDate.getDate()).padStart(2, '0');
   const futureMonth = String(futureDate.getMonth() + 1).padStart(2, '0');
@@ -1780,7 +1897,7 @@ test('GET /api/certificate returns an approved student certificate and rejects w
 
 test('GET /api/hall-ticket/status returns available status ON/AFTER unlock date', async () => {
   const previousReleaseState = global.__release_controls;
-  global.__release_controls = { hallTicketReleased: true, resultReleased: false };
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
   const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const pastDay = String(pastDate.getDate()).padStart(2, '0');
   const pastMonth = String(pastDate.getMonth() + 1).padStart(2, '0');
@@ -1864,7 +1981,7 @@ test('Hall Ticket API returns correct unlock date in response', async () => {
 test('Hall Ticket access is blocked until global release and returns the fixed exam center after release', async () => {
   const previousReleaseState = global.__release_controls;
   global.__release_controls = { hallTicketReleased: false, resultReleased: false };
-  process.env.HALL_TICKET_UNLOCK_DATE = '01-01-2020 00:00 Asia/Kolkata';
+  process.env.HALL_TICKET_UNLOCK_DATE = '01-01-2099 00:00 Asia/Kolkata';
   const fakePool = createFakePool({
     listStudents: [{
       reg_no: 'IMTSE-HALL-1', full_name: 'HALL USER', student_class: 'VII', medium: 'English',
@@ -1886,6 +2003,78 @@ test('Hall Ticket access is blocked until global release and returns the fixed e
     const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-1&dob=2014-08-15`, { headers: studentHeaders });
     assert.equal(afterRelease.status, 200);
     assert.equal((await afterRelease.json()).examCenter, 'Matoshree Tanubai Dagadu Khade English School and Junior College, Sainandan Colony, Near Rama Udyan, Miraj');
+  } finally {
+    global.__release_controls = previousReleaseState;
+    delete process.env.HALL_TICKET_UNLOCK_DATE;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Hall Ticket release enables access before the configured unlock date', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
+  process.env.HALL_TICKET_UNLOCK_DATE = '01-01-2099 00:00 Asia/Kolkata';
+  const fakePool = createFakePool({
+    listStudents: [{
+      reg_no: 'IMTSE-HALL-RELEASED', full_name: 'RELEASED HALL USER', student_class: 'VII', medium: 'English',
+      school_name: 'REGISTERED SCHOOL', dob: '2014-08-15', whatsapp: '9777777778', status: 'Approved & Active (Fees Paid)',
+      hall_ticket_released_at: '2026-09-23T00:00:00.000Z'
+    }]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const beforeReleaseStatus = await fetch(`${baseUrl}/api/hall-ticket/status`);
+    assert.equal(beforeReleaseStatus.status, 403);
+    const studentHeaders = await loginStudent(baseUrl, '9777777778', '2014-08-15');
+    const beforeRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-RELEASED&dob=2014-08-15`, { headers: studentHeaders });
+    assert.equal(beforeRelease.status, 403);
+
+    const release = await fetch(`${baseUrl}/api/admin/release/hall-ticket`, { method: 'POST', headers: adminHeaders });
+    assert.equal(release.status, 200);
+    assert.equal((await release.json()).hallTicketReleased, true);
+    const afterReleaseStatus = await fetch(`${baseUrl}/api/hall-ticket/status`);
+    assert.equal(afterReleaseStatus.status, 200);
+    assert.equal((await afterReleaseStatus.json()).available, true);
+    const afterRelease = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-RELEASED&dob=2014-08-15`, { headers: studentHeaders });
+    assert.equal(afterRelease.status, 200);
+  } finally {
+    global.__release_controls = previousReleaseState;
+    delete process.env.HALL_TICKET_UNLOCK_DATE;
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
+test('Hall Ticket keeps ownership and approval checks on automatic availability', async () => {
+  const previousReleaseState = global.__release_controls;
+  global.__release_controls = { hallTicketReleased: false, resultReleased: false };
+  process.env.HALL_TICKET_UNLOCK_DATE = '01-01-2020 00:00 Asia/Kolkata';
+  const fakePool = createFakePool({
+    listStudents: [
+      { reg_no: 'IMTSE-HALL-ELIGIBLE', full_name: 'ELIGIBLE USER', student_class: 'VII', medium: 'English', school_name: 'SCHOOL', dob: '2014-08-15', whatsapp: '9777777779', status: 'Approved' },
+      { reg_no: 'IMTSE-HALL-PENDING', full_name: 'PENDING USER', student_class: 'VII', medium: 'English', school_name: 'SCHOOL', dob: '2014-08-16', whatsapp: '9777777780', status: 'Pending Verification' }
+    ]
+  });
+  const app = createServer({ pool: fakePool });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const eligibleHeaders = await loginStudent(baseUrl, '9777777779', '2014-08-15');
+    const eligible = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-ELIGIBLE&dob=2014-08-15`, { headers: eligibleHeaders });
+    assert.equal(eligible.status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-PENDING&dob=2014-08-15`, { headers: eligibleHeaders })).status, 403);
+
+    const pendingHeaders = await loginStudent(baseUrl, '9777777780', '2014-08-16');
+    const pending = await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-PENDING&dob=2014-08-16`, { headers: pendingHeaders });
+    assert.equal(pending.status, 403);
+    assert.equal((await fetch(`${baseUrl}/api/hall-ticket?regNo=IMTSE-HALL-ELIGIBLE&dob=2014-08-16`, { headers: pendingHeaders })).status, 403);
   } finally {
     global.__release_controls = previousReleaseState;
     delete process.env.HALL_TICKET_UNLOCK_DATE;

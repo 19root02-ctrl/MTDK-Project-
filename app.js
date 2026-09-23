@@ -1305,9 +1305,11 @@ function applyResultSchoolFilter() {
             <td>
                 ${String(result.status || '').toUpperCase() === 'DRAFT' ? `<button class="btn-secondary" type="button" onclick="verifyResultRow('${result.regNo || result.reg_no || ''}')">Verify</button>` : ''}
                 ${String(result.status || '').toUpperCase() === 'PUBLISHED' ? `<button class="btn-secondary" type="button" onclick="reopenResultRow('${result.regNo || result.reg_no || ''}')">Reopen</button>` : ''}
+                <button class="btn-secondary" type="button" title="Delete result" aria-label="Delete result" onclick="deleteResultRow('${result.regNo || result.reg_no || ''}')"><i data-lucide="trash-2"></i></button>
             </td>
         </tr>
     `).join('');
+    lucide.createIcons();
 }
 
 async function verifyResultRow(regNo) {
@@ -1357,6 +1359,26 @@ async function reopenResultRow(regNo) {
     } catch (error) {
         console.error('Failed to reopen result', error);
         alert('Result reopen failed.');
+    }
+}
+
+async function deleteResultRow(regNo) {
+    const confirmation = 'Are you sure you want to delete this result?\nOnly this student\'s result will be removed. Student registration, payment, hall ticket and account will not be affected.';
+    if (!confirm(confirmation)) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/results/${encodeURIComponent(regNo)}`, {
+            method: 'DELETE',
+            headers: getAdminReleaseHeaders()
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Result deletion failed');
+        await loadResultRows();
+        await loadResultSummary();
+        alert(data.message || 'Result deleted successfully.');
+    } catch (error) {
+        console.error('Failed to delete result', error);
+        alert(error.message || 'Result deletion failed.');
     }
 }
 

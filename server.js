@@ -885,6 +885,7 @@ async function createOrUpdateResultRecord(resultPayload) {
                       logical_reasoning = EXCLUDED.logical_reasoning,
                       result_group = EXCLUDED.result_group,
                       status = EXCLUDED.status,
+                      result_released_at = NULL,
                       updated_at = CURRENT_TIMESTAMP
       `, values);
     } catch (e) {
@@ -914,6 +915,8 @@ async function createOrUpdateResultRecord(resultPayload) {
     resultGroup: String(resultPayload.resultGroup || getGroupForClass(resultPayload.className || '')).toUpperCase(),
     total_marks: Number(resultPayload.totalMarks ?? 0),
     status: String(resultPayload.status || 'DRAFT').toUpperCase(),
+    result_released_at: null,
+    resultReleasedAt: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -973,6 +976,65 @@ async function updateResultStatusByRegNo(regNo, nextStatus) {
   }
 
   return true;
+}
+
+async function deleteResultByRegNo(regNo) {
+  const target = String(regNo || '').trim();
+  if (!target) return false;
+
+  let deleted = false;
+  if (isDbConnected && connectionPool) {
+    try {
+      const result = await connectionPool.query(
+        'DELETE FROM student_results WHERE reg_no = $1 RETURNING reg_no',
+        [target]
+      );
+      deleted = getQueryRows(result).length > 0 || Number(result && result.rowCount) > 0;
+    } catch (e) {
+      console.error('Failed to delete result from PostgreSQL DB:', e);
+      throw e;
+    }
+  }
+
+  const list = global.__student_results || [];
+  const remaining = list.filter(item => String(item.reg_no || item.regNo || '').trim() !== target);
+  if (remaining.length !== list.length) {
+    global.__student_results = remaining;
+    deleted = true;
+  }
+
+  return deleted;
+}
+
+async function invalidateStaleResultsForGroup(group, uploadedRegNos, students) {
+  const targetGroup = String(group || '').toUpperCase();
+  const currentRegNos = [...new Set((uploadedRegNos || []).map(regNo => String(regNo || '').trim()).filter(Boolean))];
+
+  if (isDbConnected && connectionPool) {
+    try {
+      await connectionPool.query(
+        `DELETE FROM student_results
+         WHERE result_group = $1
+           AND reg_no <> ALL($2::varchar[])`,
+        [targetGroup, currentRegNos]
+      );
+    } catch (e) {
+      console.error('Failed to remove stale results from PostgreSQL DB:', e);
+      throw e;
+    }
+  }
+
+  const studentGroups = new Map((students || []).map(student => [
+    String(student.reg_no || student.regNo || '').trim(),
+    getGroupForClass(student.student_class || student.class || '')
+  ]));
+  global.__student_results = (global.__student_results || []).filter(result => {
+    const resultGroup = String(
+      result.result_group || result.resultGroup || studentGroups.get(String(result.reg_no || result.regNo || '').trim()) || ''
+    ).toUpperCase();
+    const regNo = String(result.reg_no || result.regNo || '').trim();
+    return resultGroup !== targetGroup || currentRegNos.includes(regNo);
+  });
 }
 
 async function generateRegistrationPdfBuffer(student) {
@@ -1774,14 +1836,14 @@ function createServer(options = {}) {
 
   app.get('/api/hall-ticket/status', async (_req, res) => {
     const releaseState = await readReleaseState();
-    const isAvailable = hallTicketConfig.isHallTicketAvailable();
+    const isAvailable = releaseState.hallTicketReleased || hallTicketConfig.isHallTicketAvailable();
     const unlockDateDisplay = hallTicketConfig.getHallTicketUnlockDateDisplay();
 
-    if (!releaseState.hallTicketReleased || !isAvailable) {
+    if (!isAvailable) {
       return res.status(403).json({
         success: false,
         available: false,
-        message: releaseState.hallTicketReleased ? `Hall Ticket will be available on ${unlockDateDisplay}` : 'Hall Ticket has not been released yet.',
+        message: `Hall Ticket will be available on ${unlockDateDisplay}`,
         unlockDate: unlockDateDisplay
       });
     }
@@ -1816,11 +1878,10 @@ function createServer(options = {}) {
       }
 
       const releaseState = await readReleaseState();
-      if (!releaseState.hallTicketReleased || (!candidate.hall_ticket_released_at && !candidate.hallTicketReleasedAt)) {
+      const isAvailable = releaseState.hallTicketReleased || hallTicketConfig.isHallTicketAvailable();
+      const hasStudentRelease = candidate.hall_ticket_released_at || candidate.hallTicketReleasedAt;
+      if (!isAvailable || (releaseState.hallTicketReleased && !hasStudentRelease)) {
         return res.status(403).json({ available: false, error: 'Hall Ticket has not been released yet.' });
-      }
-      if (!hallTicketConfig.isHallTicketAvailable()) {
-        return res.status(403).json({ available: false, error: `Hall Ticket will be available on ${hallTicketConfig.getHallTicketUnlockDateDisplay()}.` });
       }
 
       return res.json({
@@ -2075,6 +2136,18 @@ function createServer(options = {}) {
         stored.push(record);
       }
 
+      const affectedGroups = expectedGroup
+        ? [expectedGroup]
+        : [...new Set(validResults.map(result => String(result.resultGroup || '').toUpperCase()).filter(Boolean))];
+      for (const group of affectedGroups) {
+        await invalidateStaleResultsForGroup(
+          group,
+          validResults.filter(result => String(result.resultGroup || '').toUpperCase() === group).map(result => result.regNo),
+          students
+        );
+      }
+      await updateReleaseState({ resultReleased: false });
+
       const summary = {
         total: stored.reduce((sum, item) => sum + Number(item.totalMarks || 0), 0),
         uploaded: stored.length
@@ -2118,6 +2191,20 @@ function createServer(options = {}) {
       res.json(formatted);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch results', details: error.message || String(error) });
+    }
+  });
+
+  app.delete('/api/results/:regNo', requireAdminReleaseAccess, async (req, res) => {
+    try {
+      const regNo = String(req.params.regNo || '').trim();
+      if (!regNo) return res.status(400).json({ error: 'Registration number is required.' });
+
+      const deleted = await deleteResultByRegNo(regNo);
+      if (!deleted) return res.status(404).json({ error: 'Result not found.' });
+
+      return res.json({ success: true, message: 'Result deleted successfully.' });
+    } catch (error) {
+      return res.status(500).json({ error: 'Failed to delete result', details: error.message || String(error) });
     }
   });
 

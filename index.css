@@ -364,8 +364,7 @@ button {
 
 .manual-registration-layout {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(280px, 0.8fr);
-    gap: 24px;
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
     min-width: 0;
 }
@@ -375,13 +374,12 @@ button {
     min-width: 0;
 }
 
-#adminManualPanel > .manual-registration-layout > div,
-.manual-email-status {
+#adminManualPanel > .manual-registration-layout > div {
     min-width: 0;
 }
 
 #adminManualPanel .table-wrapper {
-    overflow-x: visible;
+    overflow-x: auto;
     min-width: 0;
 }
 
@@ -398,64 +396,44 @@ button {
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(1),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(1) {
-    width: 7%;
+    width: 6%;
 }
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(2),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(2) {
-    width: 17%;
+    width: 16%;
 }
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(3),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(3) {
-    width: 10%;
+    width: 9%;
 }
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(4),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(4) {
-    width: 13%;
+    width: 11%;
 }
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(5),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(5) {
-    width: 14%;
+    width: 12%;
 }
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(6),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(6) {
-    width: 24%;
+    width: 22%;
 }
 
 #adminManualPanel #manualRegistrationPreview .data-table th:nth-child(7),
 #adminManualPanel #manualRegistrationPreview .data-table td:nth-child(7) {
-    width: 15%;
+    width: 12%;
 }
 
-.manual-email-status .result-summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-}
-
-.manual-email-status .summary-card {
-    min-width: 0;
-    padding: 12px 10px;
-}
-
-.manual-email-status .summary-card span,
-.manual-email-status .summary-card strong {
-    overflow-wrap: anywhere;
-}
-
-.manual-email-status #waitingEmailsDetails .data-table {
-    font-size: 0.78rem;
-}
-
-.manual-email-status {
-    min-width: 0;
-    padding: 18px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-bg-light);
+#adminManualPanel #manualRegistrationPreview .data-table th:nth-child(8),
+#adminManualPanel #manualRegistrationPreview .data-table td:nth-child(8) {
+    width: 12%;
+    min-width: 96px;
+    white-space: nowrap;
 }
 
 .table-wrapper {
@@ -2606,6 +2584,7 @@ input.invalid {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
     background-color: #f8fafc;
     border-radius: 16px;
     padding: 16px 18px;
@@ -2616,6 +2595,8 @@ input.invalid {
     display: flex;
     align-items: center;
     gap: 14px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .receipt-icon-wrap {
@@ -2645,7 +2626,10 @@ input.invalid {
     font-weight: 800;
     color: #0f2b5c;
     text-align: right;
+    flex: 0 1 55%;
     min-width: 120px;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 
 .receipt-badge-large {
