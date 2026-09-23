@@ -1103,6 +1103,7 @@ async function tryInitDatabase(providedPool = null) {
     connectionPool = providedPool;
     isDbConnected = true;
     dbInitError = null;
+    await initializeEmailQueueTable();
     return;
   }
 
@@ -1123,6 +1124,7 @@ async function tryInitDatabase(providedPool = null) {
     }
 
     await connectionPool.query('SELECT 1');
+    isDbConnected = true;
     await initializeEmailQueueTable();
     await connectionPool.query(`
       CREATE TABLE IF NOT EXISTS students (
