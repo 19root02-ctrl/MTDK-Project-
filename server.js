@@ -435,10 +435,10 @@ async function sendApprovalEmail(student) {
         <p style="margin:6px 0 0;font-size:28px;font-weight:800;color:#0f2b5c;letter-spacing:2px;">${regNo}</p>
       </div>
       <p style="color:#475569;font-size:14px;line-height:1.9;">
-        Exam Date: <strong>14 February 2027</strong><br>
+        Exam Date: <strong>${hallTicketConfig.getExamDateDisplay()}</strong><br>
         Time: <strong>11:00 AM to 1:00 PM</strong><br>
         Exam Centre: <strong>Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj</strong><br>
-        Admit Card Available From: <strong>${hallTicketConfig.getHallTicketUnlockDateDisplay()}</strong>
+        Admit Card Will Be Available From: <strong>${hallTicketConfig.getHallTicketUnlockDateDisplay()}</strong>
       </p>
       <p style="color:#475569;font-size:14px;">Your official registration PDF is attached to this email.</p>
       <div style="margin-top:20px;padding:14px;background:#fef9c3;border-left:4px solid #f59e0b;border-radius:4px;font-size:13px;color:#92400e;">
@@ -480,8 +480,8 @@ async function sendApprovalEmail(student) {
       'https://api.brevo.com/v3/smtp/email',
       {
         sender: {
-          name: 'MTDK Shaikshnik Sankul',
-          email: 'ignitedmind.mtdk@gmail.com'
+          name: process.env.BREVO_SENDER_NAME,
+          email: process.env.BREVO_SENDER_EMAIL
         },
         to: [
           {
@@ -987,7 +987,7 @@ async function generateRegistrationPdfBuffer(student) {
         ['Amount Paid', student.amount || ''],
         ['Payment Mode', student.pay_mode || student.payMode || ''],
         ['Date of Registration', formatDateWithDay(student.reg_date || student.regDate || '')],
-        ['Exam Date', '14 February 2027'],
+        ['Exam Date', hallTicketConfig.getExamDateDisplay()],
         ['Exam Time', '11:00 AM to 1:00 PM'],
         ['Exam Centre', 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj']
       ];
@@ -1007,7 +1007,7 @@ async function generateRegistrationPdfBuffer(student) {
 
       const noteTop = y + 8;
       doc.roundedRect(leftX, noteTop, cardWidth, 88, 8).fill('#f8fafc');
-      doc.fillColor('#334155').fontSize(10).font('Helvetica').text('Exam Date: 14 February 2027', leftX + 12, noteTop + 12);
+      doc.fillColor('#334155').fontSize(10).font('Helvetica').text(`Exam Date: ${hallTicketConfig.getExamDateDisplay()}`, leftX + 12, noteTop + 12);
       doc.text('Time: 11:00 AM to 1:00 PM', leftX + 12, noteTop + 28);
       doc.text('Exam Centre: Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj', leftX + 12, noteTop + 44);
       doc.fillColor('#475569').fontSize(9).text('Please carry this admit card along with a valid photo ID on exam day.', leftX + 12, noteTop + 60, { width: cardWidth - 24 });

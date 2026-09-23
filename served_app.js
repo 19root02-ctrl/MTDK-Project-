@@ -1231,8 +1231,8 @@ function showDashboardView(student) {
         statusDot.className = "status-dot yellow";
     }
 
-    // Countdown calculations (Exam: 14 Feb 2027)
-    const examDate = new Date(2027, 1, 14); // 14 February 2027
+    // Countdown calculations (Exam: 06 Feb 2027)
+    const examDate = new Date(2027, 1, 6); // 06 February 2027
     const today = new Date();
     const diffTime = examDate - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));

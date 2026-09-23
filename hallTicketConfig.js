@@ -4,14 +4,23 @@
  * Centralized configuration for Hall Ticket unlock date/time
  * Uses Asia/Kolkata (IST) timezone for all comparisons
  * 
- * Temporary trial configuration. Change only these two values for the actual exam.
+ * Temporary trial configuration. Change only the exam date for the actual exam.
  */
 
 // ================================
 // EXAM CONFIGURATION
 // ================================
-const HALL_TICKET_UNLOCK_DATE = '2026-08-23T17:00:00+05:30';
-const EXAM_DATE = '2027-02-14T00:00:00+05:30';
+const EXAM_DATE = '2027-02-06T00:00:00+05:30';
+const HALL_TICKET_DAYS_BEFORE_EXAM = 15;
+
+function getDefaultHallTicketUnlockDate() {
+  const examDate = new Date(`${EXAM_DATE.slice(0, 10)}T00:00:00Z`);
+  examDate.setUTCDate(examDate.getUTCDate() - HALL_TICKET_DAYS_BEFORE_EXAM);
+  const date = examDate.toISOString().slice(0, 10);
+  return `${date}T00:00:00+05:30`;
+}
+
+const HALL_TICKET_UNLOCK_DATE = getDefaultHallTicketUnlockDate();
 
 const DEFAULT_HALL_TICKET_UNLOCK_DATE = HALL_TICKET_UNLOCK_DATE;
 
@@ -96,16 +105,16 @@ function getHallTicketUnlockDateDisplay() {
   const unlockDate = parseHallTicketUnlockDate(getHallTicketUnlockDateConfig());
   if (!unlockDate) return getHallTicketUnlockDateConfig();
 
-  const day = String(unlockDate.getDate()).padStart(2, '0');
-  const month = String(unlockDate.getMonth() + 1).padStart(2, '0');
-  const year = unlockDate.getFullYear();
-  const hours = unlockDate.getHours();
-  const minutes = unlockDate.getMinutes();
-  const period = hours >= 12 ? 'PM' : 'AM';
-  const displayHour = hours % 12 || 12;
-  const displayMinutes = String(minutes).padStart(2, '0');
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric'
+  }).format(unlockDate).replace(/\//g, '-');
+}
 
-  return `${day}-${month}-${year} at ${displayHour}:${displayMinutes} ${period}`;
+function getExamDateDisplay(format = 'long') {
+  const options = format === 'short'
+    ? { day: '2-digit', month: 'short', year: 'numeric' }
+    : { day: '2-digit', month: 'long', year: 'numeric' };
+  return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'Asia/Kolkata' }).format(new Date(EXAM_DATE));
 }
 
 // Export functions for both Node.js and browser environments
@@ -114,19 +123,23 @@ if (typeof module !== 'undefined' && module.exports) {
     DEFAULT_HALL_TICKET_UNLOCK_DATE,
     HALL_TICKET_UNLOCK_DATE,
     EXAM_DATE,
+    HALL_TICKET_DAYS_BEFORE_EXAM,
     parseHallTicketUnlockDate,
     isHallTicketAvailable,
     getHallTicketUnlockDateDisplay,
-    getHallTicketUnlockDateConfig
+    getHallTicketUnlockDateConfig,
+    getExamDateDisplay
   };
 } else if (typeof window !== 'undefined') {
   window.hallTicketConfig = {
     DEFAULT_HALL_TICKET_UNLOCK_DATE,
     HALL_TICKET_UNLOCK_DATE,
     EXAM_DATE,
+    HALL_TICKET_DAYS_BEFORE_EXAM,
     parseHallTicketUnlockDate,
     isHallTicketAvailable,
     getHallTicketUnlockDateDisplay,
-    getHallTicketUnlockDateConfig
+    getHallTicketUnlockDateConfig,
+    getExamDateDisplay
   };
 }

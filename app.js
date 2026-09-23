@@ -22,6 +22,10 @@ function initApp() {
     // Initialize Lucide Icons
     try { lucide.createIcons(); } catch (e) {}
 
+    document.querySelectorAll('[data-exam-date]').forEach(element => {
+        element.textContent = examConfiguration.getExamDateDisplay(element.dataset.examDate || 'long');
+    });
+
     populateAdminCategoryOptions();
     renderAdminStudents();
     renderAdminResources();
@@ -801,7 +805,7 @@ async function handleFormSubmit(event) {
     document.getElementById("recSchoolName").innerText = schoolVal;
     document.getElementById("recClassMedium").innerText = `Class ${classVal} - ${mediumVal}`;
     document.getElementById("recAmount").innerText = totalAmount;
-    document.getElementById("recExamDate").innerText = "14 February 2027";
+    document.getElementById("recExamDate").innerText = examConfiguration.getExamDateDisplay();
     document.getElementById("recExamTime").innerText = "11:00 AM to 1:00 PM";
     document.getElementById("recExamCentre").innerText = "MTDK School";
     
@@ -1860,7 +1864,7 @@ function generateOfficialHallTicketHtml(student) {
             </td>
             <td class="header-boxes-col">
                 <div class="info-box">
-                    <div>Exam Date : <strong>14 February 2027</strong></div>
+                    <div>Exam Date : <strong>${examConfiguration.getExamDateDisplay()}</strong></div>
                     <div>Time : <strong>11:00 AM to 1:00 PM</strong></div>
                 </div>
                 <div class="info-box">

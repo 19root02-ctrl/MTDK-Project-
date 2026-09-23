@@ -38,8 +38,8 @@ test('Result headers normalize to the exact upload API contract', () => {
   ], ['marathi', 'english', 'mathsLogicalReasoning', 'evsScience', 'socialScience', 'mathsLogicalReasoning']);
 });
 
-test('Exam countdown configuration targets 14 February 2027 in India time', () => {
-  assert.equal(EXAM_DATE, '2027-02-14T00:00:00+05:30');
+test('Exam countdown configuration targets 06 February 2027 in India time', () => {
+  assert.equal(EXAM_DATE, '2027-02-06T00:00:00+05:30');
 });
 
 test('Manual registration preview rejects rows missing DOB and invalid DOB', async () => {
