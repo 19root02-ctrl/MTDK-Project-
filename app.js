@@ -2146,7 +2146,7 @@ async function handleManualRegistrationExcel(event) {
         errorBox.innerHTML = (payload.errors || []).map(error => `<div>Row ${escapeAdminText(error.row)}: ${escapeAdminText(error.message)}</div>`).join('');
         previewBox.classList.remove('hidden');
         document.getElementById('manualRegistrationPreviewTable').innerHTML = manualRegistrationPreviewRows.map(row => `
-            <tr><td>${escapeAdminText(row.rowNumber)}</td><td>${escapeAdminText(row.name)}</td><td>${escapeAdminText(row.standard)}</td><td>${escapeAdminText(row.dob)}</td><td>${escapeAdminText(row.mobile)}</td><td>${escapeAdminText(row.email)}</td><td>${escapeAdminText(row.status)}</td></tr>
+            <tr><td>${escapeAdminText(row.rowNumber)}</td><td>${escapeAdminText(row.name)}</td><td>${escapeAdminText(row.standard)}</td><td>${escapeAdminText(row.dob)}</td><td>${escapeAdminText(row.mobile)}</td><td>${escapeAdminText(row.email)}</td><td>${escapeAdminText(row.amount)}</td><td>${escapeAdminText(row.status)}</td></tr>
         `).join('');
         importButton.disabled = !payload.validRecords || !response.ok;
         if (!response.ok && !payload.preview?.length) throw new Error(payload.message || 'Manual registration preview failed.');
@@ -2176,51 +2176,11 @@ async function confirmManualRegistrationImport() {
         return;
     }
     summaryBox.classList.remove('hidden');
-    summaryBox.textContent = `Imported: ${payload.imported} | Duplicate: ${payload.duplicate} | Invalid: ${payload.invalid} | Emails sent: ${payload.emailSent} | Waiting: ${payload.emailWaiting} | Failed: ${payload.emailFailed}`;
+    summaryBox.textContent = `Imported: ${payload.imported} | Duplicate: ${payload.duplicate} | Invalid: ${payload.invalid}`;
     errorBox.classList.toggle('hidden', !(payload.skipped || []).length);
     errorBox.innerHTML = (payload.skipped || []).map(item => `<div>Row ${escapeAdminText(item.row)}: ${escapeAdminText(item.message)}</div>`).join('');
     document.getElementById('manualRegistrationImportButton').disabled = true;
     await loadStudentsFromDatabase();
-    await loadEmailStatusPanel();
-}
-
-async function loadEmailStatusPanel(showWaiting = false) {
-    const summaryContainer = document.getElementById('emailStatusSummary');
-    const tableBody = document.getElementById('waitingEmailsTable');
-    const details = document.getElementById('waitingEmailsDetails');
-    const toggle = document.getElementById('waitingEmailsToggle');
-    if (!summaryContainer || !tableBody) return;
-    try {
-        const [summaryResponse, waitingResponse] = await Promise.all([
-            fetch(`${API_BASE_URL}/api/admin/email-status`, { headers: getAdminReleaseHeaders() }),
-            fetch(`${API_BASE_URL}/api/admin/email/waiting`, { headers: getAdminReleaseHeaders() })
-        ]);
-        if (!summaryResponse.ok || !waitingResponse.ok) throw new Error('Email status could not be loaded.');
-        const summary = await summaryResponse.json();
-        const waiting = await waitingResponse.json();
-        summaryContainer.innerHTML = [
-            ['Sent', summary.sent || 0], ['Waiting / Pending', summary.waiting || 0], ['Failed', summary.failed || 0]
-        ].map(([label, value]) => `<div class="summary-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
-        tableBody.innerHTML = waiting.length ? waiting.map(row => `<tr><td>${escapeAdminText(row.student_name)}</td><td>${escapeAdminText(row.registration_number)}</td><td>${escapeAdminText(row.email_address)}</td><td>${escapeAdminText(row.registration_type)}</td><td>${escapeAdminText(row.status)}</td><td>${escapeAdminText(row.created_at)}</td></tr>`).join('') : '<tr><td colspan="6">No waiting emails.</td></tr>';
-        if (showWaiting && details) {
-            details.classList.remove('hidden');
-            if (toggle) toggle.textContent = 'Hide Waiting Emails';
-        }
-    } catch (error) {
-        tableBody.innerHTML = `<tr><td colspan="6">${escapeAdminText(error.message || 'Email status unavailable.')}</td></tr>`;
-    }
-}
-
-function viewWaitingEmails() {
-    const details = document.getElementById('waitingEmailsDetails');
-    const toggle = document.getElementById('waitingEmailsToggle');
-    if (!details || !toggle) return;
-    if (details.classList.contains('hidden')) {
-        loadEmailStatusPanel(true);
-    } else {
-        details.classList.add('hidden');
-        toggle.textContent = 'View Waiting Emails';
-    }
 }
 
 function showAdminPanel(panelName) {
@@ -2247,7 +2207,6 @@ function showAdminPanel(panelName) {
         loadResultSummary();
         loadResultRows();
     }
-    if (panelName === 'manual') loadEmailStatusPanel();
     if (panelName === 'release') loadReleaseStatus();
 }
 

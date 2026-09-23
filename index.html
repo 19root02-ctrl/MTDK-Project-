@@ -1101,29 +1101,12 @@
                                     <div id="manualRegistrationErrors" class="result-alert-box hidden"></div>
                                     <div id="manualRegistrationPreview" class="table-wrapper hidden">
                                         <table class="data-table">
-                                            <thead><tr><th>Row</th><th>Name</th><th>Standard</th><th>DOB</th><th>Mobile</th><th>Email</th><th>Status</th></tr></thead>
+                                            <thead><tr><th>Row</th><th>Name</th><th>Standard</th><th>DOB</th><th>Mobile</th><th>Email</th><th>Amount Paid</th><th>Status</th></tr></thead>
                                             <tbody id="manualRegistrationPreviewTable"></tbody>
                                         </table>
                                         <button id="manualRegistrationImportButton" type="button" class="btn-primary" onclick="confirmManualRegistrationImport()" disabled>Confirm Import</button>
                                     </div>
                                 </div>
-                                <section id="adminEmailPanel" class="manual-email-status">
-                                    <div class="admin-card-header">
-                                        <div>
-                                            <h3>Email Status</h3>
-                                            <p>Monitor registration email delivery without blocking student access.</p>
-                                        </div>
-                                    </div>
-                                    <div id="emailStatusSummary" class="result-summary-grid"></div>
-                                    <button type="button" id="waitingEmailsToggle" class="btn-secondary" onclick="viewWaitingEmails()">View Waiting Emails</button>
-                                    <div id="waitingEmailsDetails" class="table-wrapper hidden">
-                                        <h4>Waiting Emails</h4>
-                                        <table class="data-table">
-                                            <thead><tr><th>Student Name</th><th>Registration No.</th><th>Email</th><th>Registration Type</th><th>Status</th><th>Created At</th></tr></thead>
-                                            <tbody id="waitingEmailsTable"></tbody>
-                                        </table>
-                                    </div>
-                                </section>
                             </div>
                         </section>
 

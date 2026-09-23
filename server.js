@@ -149,7 +149,8 @@ const MANUAL_REGISTRATION_HEADERS = [
   'School & School Address',
   'Mob. No.',
   'Email ID',
-  'Payment Mode'
+  'Payment Mode',
+  'Amount Paid'
 ];
 
 function normalizeManualHeader(value = '') {
@@ -196,6 +197,17 @@ function safeNormalizeMob(value) {
 
 function safeNormalizeName(value = '') {
   return String(value || '').trim();
+}
+
+function parseManualAmount(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
+  const normalized = String(value ?? '').trim().replace(/,/g, '');
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
 async function generateUniqueRegistrationNumber() {
@@ -381,7 +393,7 @@ async function queueRegistrationEmail(student, registrationType = 'Manual') {
     status: 'PENDING'
   });
 
-  const emailInfo = await sendApprovalEmail(student);
+  const emailInfo = await sendApprovalEmail(student, { includeAmountPaid: registrationType === 'Manual' });
   if (emailInfo && emailInfo.ok) {
     await updateEmailQueueStatus(student.reg_no || student.regNo || student.whatsapp || registrationNumber, registrationNumber, 'SENT', { retryCount: 0, lastError: null });
     return { ok: true, status: 'SENT', reason: null };
@@ -394,7 +406,7 @@ async function queueRegistrationEmail(student, registrationType = 'Manual') {
   return { ok: false, status: nextStatus, reason: emailInfo && emailInfo.reason ? emailInfo.reason : 'send-failed', error: errorText };
 }
 
-async function sendApprovalEmail(student) {
+async function sendApprovalEmail(student, options = {}) {
   const studentEmail = student.email || student.studentEmail || student.emailAddress;
   console.log('[EMAIL] Approval email requested', {
     regNo: student.reg_no || student.regNo || student.regno || '',
@@ -409,6 +421,9 @@ async function sendApprovalEmail(student) {
 
   const studentName = student.full_name || student.fullName || student.name || 'Student';
   const regNo = student.reg_no || student.regNo || student.regno || '';
+  const amountPaidLine = options.includeAmountPaid === true
+    ? `<br>Amount Paid: <strong>${String(student.amount || '').replace(/^₹/, '')}</strong>`
+    : '';
 
   let pdfBuffer;
   try {
@@ -438,6 +453,7 @@ async function sendApprovalEmail(student) {
         Exam Date: <strong>${hallTicketConfig.getExamDateDisplay()}</strong><br>
         Time: <strong>11:00 AM to 1:00 PM</strong><br>
         Exam Centre: <strong>Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj</strong><br>
+        ${amountPaidLine}
         Admit Card Will Be Available From: <strong>${hallTicketConfig.getHallTicketUnlockDateDisplay()}</strong>
       </p>
       <p style="color:#475569;font-size:14px;">Your official registration PDF is attached to this email.</p>
@@ -970,6 +986,7 @@ async function generateRegistrationPdfBuffer(student) {
       const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
       const cardWidth = pageWidth;
       const leftX = doc.page.margins.left;
+      const examCentreText = 'Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj';
 
       doc.rect(leftX, 20, cardWidth, 90).fill('#0f2b5c');
       doc.fillColor('white').fontSize(16).font('Helvetica-Bold').text('IGNITED MINDS TALENT SEARCH EXAM', leftX + 16, 32, { width: cardWidth - 32, align: 'center' });
@@ -1000,17 +1017,37 @@ async function generateRegistrationPdfBuffer(student) {
         if (index > 0 && index % 5 === 0) {
           y += 8;
         }
+        const valueText = String(val || '');
+        const valueWidth = cardWidth - valueX - 12;
         doc.fillColor('#475569').fontSize(10).font('Helvetica-Bold').text(label, labelX, y, { lineBreak: false });
-        doc.fillColor('#0f2b5c').fontSize(10).font('Helvetica').text(String(val || ''), valueX, y, { width: cardWidth - valueX - 12, lineBreak: false });
-        y += 20;
+        const labelHeight = doc.heightOfString(label, { width: valueX - labelX - 12 });
+        doc.fillColor('#0f2b5c').fontSize(10).font('Helvetica').text(valueText, valueX, y, { width: valueWidth, lineGap: 2 });
+        const valueHeight = doc.heightOfString(valueText, { width: valueWidth, lineGap: 2 });
+        y += Math.max(20, labelHeight, valueHeight) + 4;
       });
 
       const noteTop = y + 8;
-      doc.roundedRect(leftX, noteTop, cardWidth, 88, 8).fill('#f8fafc');
-      doc.fillColor('#334155').fontSize(10).font('Helvetica').text(`Exam Date: ${hallTicketConfig.getExamDateDisplay()}`, leftX + 12, noteTop + 12);
-      doc.text('Time: 11:00 AM to 1:00 PM', leftX + 12, noteTop + 28);
-      doc.text('Exam Centre: Sainandan Colony, Near Rama Udyan, Matoshree Tanubai Dagadu Khade English School and Junior College, Miraj', leftX + 12, noteTop + 44);
-      doc.fillColor('#475569').fontSize(9).text('Please carry this admit card along with a valid photo ID on exam day.', leftX + 12, noteTop + 60, { width: cardWidth - 24 });
+      const noteX = leftX + 12;
+      const noteWidth = cardWidth - 24;
+      const examDateText = `Exam Date: ${hallTicketConfig.getExamDateDisplay()}`;
+      const examTimeText = 'Time: 11:00 AM to 1:00 PM';
+      const instructionText = 'Please carry this admit card along with a valid photo ID on exam day.';
+      const noteDateHeight = doc.heightOfString(examDateText, { width: noteWidth });
+      const noteTimeHeight = doc.heightOfString(examTimeText, { width: noteWidth });
+      const noteCentreHeight = doc.heightOfString(`Exam Centre: ${examCentreText}`, { width: noteWidth, lineGap: 2 });
+      doc.fontSize(9);
+      const instructionHeight = doc.heightOfString(instructionText, { width: noteWidth });
+      const noteHeight = 24 + noteDateHeight + noteTimeHeight + noteCentreHeight + instructionHeight + 20;
+
+      doc.roundedRect(leftX, noteTop, cardWidth, noteHeight, 8).fill('#f8fafc');
+      let noteY = noteTop + 12;
+      doc.fillColor('#334155').fontSize(10).font('Helvetica').text(examDateText, noteX, noteY, { width: noteWidth });
+      noteY += noteDateHeight + 4;
+      doc.text(examTimeText, noteX, noteY, { width: noteWidth });
+      noteY += noteTimeHeight + 4;
+      doc.text(`Exam Centre: ${examCentreText}`, noteX, noteY, { width: noteWidth, lineGap: 2 });
+      noteY += noteCentreHeight + 8;
+      doc.fillColor('#475569').fontSize(9).text(instructionText, noteX, noteY, { width: noteWidth });
 
       doc.fillColor('#64748b').fontSize(8).text('Initiative by MTDK Shaikshnik Sankul', leftX, doc.page.height - 36, { align: 'center', width: cardWidth });
 
@@ -1385,7 +1422,8 @@ function createServer(options = {}) {
         { label: 'School & School Address', keys: ['schoolschooladdress', 'schoolname', 'schooladdress', 'school'] },
         { label: 'Mob. No.', keys: ['mobno', 'mobileno', 'mobilenumber', 'phone', 'whatsapp', 'mobile'] },
         { label: 'Email ID', keys: ['emailid', 'email'] },
-        { label: 'Payment Mode', keys: ['paymentmode', 'modeofpayment', 'paymode'] }
+        { label: 'Payment Mode', keys: ['paymentmode', 'modeofpayment', 'paymode'] },
+        { label: 'Amount Paid', keys: ['amountpaid', 'amount'] }
       ];
       const missingHeaders = requiredHeaderGroups
         .filter(group => !group.keys.some(key => normalizedHeaders.has(key)))
@@ -1419,6 +1457,8 @@ function createServer(options = {}) {
       const mobile = safeNormalizeMob(getManualField(row, ['Mob. No.', 'Mob No', 'Mobile No', 'Mobile Number', 'Phone'], ['mobile', 'phone', 'whatsapp']));
       const email = String(getManualField(row, ['Email ID', 'Email'], ['email', 'emailId']) || '').trim().toLowerCase();
       const paymentMode = String(getManualField(row, ['Payment Mode', 'Mode of Payment'], ['paymentMode', 'payMode']) || '').trim();
+      const amountValue = getManualField(row, ['Amount Paid', 'Amount'], ['amount', 'amountPaid']);
+      const amount = parseManualAmount(amountValue);
 
       const rowErrors = [];
       if (!name) rowErrors.push('Missing student name');
@@ -1435,6 +1475,8 @@ function createServer(options = {}) {
       if (!mobile || mobile.length !== 10) rowErrors.push('Invalid mobile number');
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) rowErrors.push('Invalid email format');
       if (!paymentMode) rowErrors.push('Missing Payment Mode');
+      if (String(amountValue ?? '').trim() === '') rowErrors.push('Missing Amount Paid');
+      else if (amount === null) rowErrors.push('Invalid Amount Paid; must be numeric');
 
       const duplicateKey = `${(name || '').toLowerCase()}|${(normalizedDob || '').toLowerCase()}|${(mobile || '').slice(-10)}|${(school || '').toLowerCase()}`;
       if (seen.has(duplicateKey)) rowErrors.push('Duplicate record');
@@ -1453,6 +1495,7 @@ function createServer(options = {}) {
         mobile,
         email,
         paymentMode,
+        amount: amount === null ? '' : amount.toFixed(2),
         status: rowErrors.length === 0 ? 'Ready' : rowErrors.join('; '),
         validationStatus: rowErrors.length === 0 ? 'Ready' : rowErrors.join('; '),
         rowNumber: index + 1
@@ -1534,7 +1577,7 @@ function createServer(options = {}) {
           whatsapp: String(row.mobile || '').trim(),
           email: String(row.email || '').trim().toLowerCase(),
           address: `School: ${String(row.school || '').trim()}`,
-          amount: '₹0.00',
+          amount: row.amount,
           payMode: String(row.paymentMode || '').trim(),
           regNo,
           status: 'Approved & Active (Fees Paid)',

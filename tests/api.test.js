@@ -63,7 +63,7 @@ test('Manual registration preview rejects rows missing DOB and invalid DOB', asy
           'School & School Address': 'ABC School',
           'Mob. No.': '9876543210',
           'Email ID': 'student@example.com',
-          'Payment Mode': 'UPI'
+          'Payment Mode': 'UPI', 'Amount Paid': 500
         }, {
           'Sr. No.': 2,
           'Name of the Student': 'Bad DOB Student',
@@ -73,7 +73,7 @@ test('Manual registration preview rejects rows missing DOB and invalid DOB', asy
           'School & School Address': 'ABC School',
           'Mob. No.': '9876543211',
           'Email ID': 'bad@example.com',
-          'Payment Mode': 'Cash'
+          'Payment Mode': 'Cash', 'Amount Paid': 500
         }]
       })
     });
@@ -101,27 +101,27 @@ test('Manual DOB validation maps the exact header and preserves Excel date cells
         {
           'Sr. No.': 1, 'Name of the Student': 'ISO DOB', 'Std.': 'V', 'Date of Birth': '2015-08-15',
           Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543212',
-          'Email ID': 'iso-dob@example.com', 'Payment Mode': 'Cash'
+          'Email ID': 'iso-dob@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
         },
         {
           'Sr. No.': 2, 'Name of the Student': 'Excel Date DOB', 'Std.': 'VI', 'Date of Birth': new Date('2015-08-15T00:00:00Z'),
           Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543213',
-          'Email ID': 'excel-dob@example.com', 'Payment Mode': 'Cash'
+          'Email ID': 'excel-dob@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
         },
         {
           'Sr. No.': 3, 'Name of the Student': 'Slash DOB', 'Std.': 'VII', 'Date of Birth': '15/08/2015',
           Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543214',
-          'Email ID': 'slash-dob@example.com', 'Payment Mode': 'Cash'
+          'Email ID': 'slash-dob@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
         },
         {
           'Sr. No.': 4, 'Name of the Student': 'Missing DOB', 'Std.': 'VIII', 'Date of Birth': '',
           Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543215',
-          'Email ID': 'missing-dob@example.com', 'Payment Mode': 'Cash'
+          'Email ID': 'missing-dob@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
         },
         {
           'Sr. No.': 5, 'Name of the Student': 'Invalid DOB', 'Std.': 'IX', 'Date of Birth': '31/02/2015',
           Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543216',
-          'Email ID': 'invalid-dob@example.com', 'Payment Mode': 'Cash'
+          'Email ID': 'invalid-dob@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
         }
       ] })
     });
@@ -154,7 +154,8 @@ test('Manual DOB validation supports school DD-MM-YYYY and MM/DD/YY formats', as
       'School & School Address': 'ABC School',
       'Mob. No.': mobile,
       'Email ID': `dob-${serial}@example.com`,
-      'Payment Mode': 'Cash'
+      'Payment Mode': 'Cash',
+      'Amount Paid': 500
     });
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
       method: 'POST',
@@ -192,7 +193,7 @@ test('Manual preview reports all missing DOB rows as invalid', async () => {
   try {
     const baseRow = {
       'Name of the Student': 'Missing DOB', 'Std.': 'V', 'Date of Birth': '', Medium: 'English',
-      'School & School Address': 'ABC School', 'Mob. No.': '987654329', 'Email ID': 'missing@example.com', 'Payment Mode': 'Cash'
+      'School & School Address': 'ABC School', 'Mob. No.': '987654329', 'Email ID': 'missing@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
     };
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
       method: 'POST',
@@ -270,6 +271,47 @@ test('Manual registration preview rejects workbooks with missing required header
   }
 });
 
+test('Manual registration validates and preserves Amount Paid', async () => {
+  const app = createServer({ pool: createFakePool() });
+  const server = await new Promise(resolve => {
+    const httpServer = app.listen(0, () => resolve(httpServer));
+  });
+
+  try {
+    const rows = [
+      {
+        'Sr. No.': 1, 'Name of the Student': 'Valid Amount', 'Std.': 'V', 'Date of Birth': '2015-08-15',
+        Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543297',
+        'Email ID': 'valid-amount@example.com', 'Payment Mode': 'Cash', 'Amount Paid': '500.50'
+      },
+      {
+        'Sr. No.': 2, 'Name of the Student': 'Missing Amount', 'Std.': 'V', 'Date of Birth': '2015-08-15',
+        Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543298',
+        'Email ID': 'missing-amount@example.com', 'Payment Mode': 'Cash', 'Amount Paid': ''
+      },
+      {
+        'Sr. No.': 3, 'Name of the Student': 'Invalid Amount', 'Std.': 'V', 'Date of Birth': '2015-08-15',
+        Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543296',
+        'Email ID': 'invalid-amount@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 'five hundred'
+      }
+    ];
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/manual-registration/preview`, {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows })
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.validRecords, 1);
+    assert.equal(payload.invalidRecords, 2);
+    assert.equal(payload.preview[0].amount, '500.50');
+    assert.match(payload.errors.find(error => error.row === 2).message, /Missing Amount Paid/);
+    assert.match(payload.errors.find(error => error.row === 3).message, /Invalid Amount Paid/);
+  } finally {
+    await new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
+  }
+});
+
 test('Manual registration preview rejects standards outside 1 through 10', async () => {
   const app = createServer({ pool: createFakePool() });
   const server = await new Promise(resolve => {
@@ -283,7 +325,7 @@ test('Manual registration preview rejects standards outside 1 through 10', async
       body: JSON.stringify({ rows: [{
         'Sr. No.': 1, 'Name of the Student': 'Out Of Range', 'Std.': '11', 'Date of Birth': '2015-08-15',
         Medium: 'English', 'School & School Address': 'ABC School', 'Mob. No.': '9876543299',
-        'Email ID': 'out-of-range@example.com', 'Payment Mode': 'Cash'
+        'Email ID': 'out-of-range@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
       }] })
     });
     assert.equal(response.status, 400);
@@ -314,7 +356,8 @@ test('Manual registration import generates a unique registration number and stor
           'School & School Address': 'ABC School, Pune',
           'Mob. No.': '9988776655',
           'Email ID': 'manual@example.com',
-          'Payment Mode': 'Cash'
+          'Payment Mode': 'Cash',
+          'Amount Paid': 500
         }]
       })
     });
@@ -340,6 +383,7 @@ test('Manual registration import generates a unique registration number and stor
     const student = studentList.find(item => item.whatsapp === '9988776655');
     assert.ok(student);
     assert.equal(student.dob, '2015-08-15');
+    assert.equal(student.amount, '500.00');
 
     const login = await fetch(`http://127.0.0.1:${port}/api/student/login`, {
       method: 'POST',
@@ -371,12 +415,12 @@ test('Manual students flow through primary and secondary result release ownershi
       {
         'Sr. No.': 1, 'Name of the Student': 'PRIMARY MANUAL', 'Std.': 'III', 'Date of Birth': '2016-08-15',
         Medium: 'English', 'School & School Address': 'PRIMARY SCHOOL', 'Mob. No.': '8111111111',
-        'Email ID': 'primary-manual@example.com', 'Payment Mode': 'Cash'
+        'Email ID': 'primary-manual@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
       },
       {
         'Sr. No.': 2, 'Name of the Student': 'SECONDARY MANUAL', 'Std.': 'VII', 'Date of Birth': '2014-08-16',
         Medium: 'English', 'School & School Address': 'SECONDARY SCHOOL', 'Mob. No.': '8222222222',
-        'Email ID': 'secondary-manual@example.com', 'Payment Mode': 'Cash'
+        'Email ID': 'secondary-manual@example.com', 'Payment Mode': 'Cash', 'Amount Paid': 500
       }
     ];
     const importResponse = await fetch(`${baseUrl}/api/admin/manual-registration/import`, {
